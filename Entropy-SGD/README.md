@@ -1,14 +1,12 @@
-# Entropy-SGD in PyTorch
+# Entropy-SGD
 
-A simple, self-contained implementation of the local-entropy optimizer from `Papers/`. It has the same wrapper interface as the SAM variants in `../SAM`.
+Self-contained PyTorch implementation of Chaudhari et al. 2017 (`Papers/Entropy-SGD.pdf`), with the same wrapper interface as `../SAM`.
 
-| Class        | Paper | Update rule |
-|--------------|-------|-------------|
-| `EntropySGD` | Chaudhari et al. 2017 (`Entropy-SGD.pdf`) | `L` SGLD steps from `x' = x` on `f(x') + γ/2‖x − x'‖²`, each on a new mini-batch, with running average `μ ← (1−α)μ + αx'`. Then step with `x − μ` (or `γ(x − μ)`). Scope `γ_t = γ₀(1+γ₁)^t` |
+**Update:** run `L` SGLD steps from `x' = x` on `f(x') + γ/2‖x − x'‖²` (new mini-batch each), averaging `μ ← (1−α)μ + αx'`. Then step the outer optimizer with `x − μ`. The scope grows as `γ_t = γ₀(1+γ₁)^t`.
 
 ## Usage
 
-The closure returns the loss and does **not** call `backward()`. Unlike SAM, it is called `L` times per step, and it should draw a **new mini-batch on every call** (Alg. 1, line 3).
+The closure returns the loss, does **not** call `backward()`, and must draw a **new mini-batch on every call** (it runs `L` times per step).
 
 ```python
 from entropy_optim import EntropySGD
@@ -22,19 +20,17 @@ for _ in range(num_updates):
     scheduler.step()
 ```
 
-Extra keyword arguments (`lr`, `momentum`, `weight_decay`, ...) go to the outer base optimizer. Parameter groups and LR schedulers work as usual, and they affect only the outer learning rate η. The SGLD optimizer is built over the same parameters at every step, with `lr=sgld_lr` and `sgld_kwargs`.
+Extra kwargs go to the outer optimizer; schedulers affect only the outer lr.
 
 | Argument | Paper | Meaning |
 |----------|-------|---------|
-| `sgld_steps` | L | SGLD steps (= mini-batches) per update |
-| `gamma`, `gamma_growth` | γ₀, γ₁ | scope and its exponential growth per update |
-| `sgld_lr` | η′ | SGLD step size, kept fixed |
-| `noise` | ε | thermal noise; the SGLD step adds `√η′ · ε · N(0, I)` |
-| `alpha` | α | weight of the newest sample in μ |
-| `sgld_optimizer`, `sgld_kwargs` | — | SGD (default), SGD + Nesterov, or Adam for the inner loop (Sec. 4.2) |
-| `scale_by_gamma` | — | `True`: outer gradient `γ(x − μ)` (Alg. 1 line 7). `False`: `x − μ` (Sec. 4.3, the default) |
-
-## Scripts
+| `sgld_steps` | L | SGLD steps (mini-batches) per update |
+| `gamma`, `gamma_growth` | γ₀, γ₁ | scope and its growth per update |
+| `sgld_lr` | η′ | SGLD step size (fixed) |
+| `noise` | ε | thermal noise: adds `√η′ · ε · N(0, I)` |
+| `alpha` | α | weight of newest sample in μ |
+| `sgld_optimizer`, `sgld_kwargs` | — | inner optimizer: SGD (default), SGD + Nesterov, or Adam |
+| `scale_by_gamma` | — | outer gradient `γ(x − μ)` if `True`, else `x − μ` (default) |
 
 ```bash
 python train_glue.py --task sst2 --optim adamw              # baseline
@@ -42,17 +38,17 @@ python train_glue.py --task sst2 --optim entropysgd --sgld_steps 5 --gamma 0.03 
 python train_glue.py --task rte  --optim entropysgd --sgld_optim sgd --sgld_lr 1e-3 --sgld_momentum 0.9
 ```
 
-## Defaults from the paper
+## Paper defaults
 
-- L ∈ [5, 20]; α = 0.75; ε ∈ [1e-4, 1e-3]; η′ ∈ [0.1, 1] with SGD, never annealed.
-- Scoping: γ₀ = 1e-4 (MNIST) or 0.03 (CIFAR), growing by a factor of 1.001 per update (γ₁ = 1e-3). For RNNs γ is fixed (1e-3 for PTB, 0.01 for char-LSTM).
-- Momentum mattered: 0.9 for CNNs, 0.5 for RNNs (β₁ = 0.5 for Entropy-Adam).
-- **Tuning γ** (Sec. 4.2): fix L, ε and η′, then pick γ so that the outer gradient has a magnitude comparable to the plain SGD gradient. `opt.grad_ratio` logs `‖outer gradient‖ / ‖∇f(x)‖` for this purpose. Aim for about 1.
+- L ∈ [5, 20], α = 0.75, ε ∈ [1e-4, 1e-3], η′ ∈ [0.1, 1] with SGD.
+- γ₀ = 1e-4 (MNIST) or 0.03 (CIFAR), γ₁ = 1e-3. Fixed γ for RNNs (1e-3 PTB, 0.01 char-LSTM).
+- Momentum 0.9 for CNNs, 0.5 for RNNs (β₁ = 0.5 for Entropy-Adam).
+- **Tuning γ:** pick γ so `opt.grad_ratio` (‖outer grad‖ / ‖∇f‖) is about 1.
 
 ## Notes
 
-- **Cost.** Each update costs L forward/backward passes, one per mini-batch. Compare against other methods by gradient evaluations ("epochs × L" in the paper's plots). `train_glue.py` does this: `--epochs` counts passes over the data, so Entropy-SGD makes L× fewer updates than AdamW. Tune `--lr` or `--epochs` with that in mind.
-- **Memory.** Two extra copies of the weights (`x` and `μ`), plus the state of the SGLD optimizer.
-- **GLUE defaults are not from the paper.** η′ ∈ [0.1, 1] is meant for plain SGD on CNNs and is likely too large for fine-tuning a transformer. `train_glue.py` therefore uses Adam for the inner loop by default, with `η′ = --lr`. These are starting points and have not been tuned.
-- **Inner-loop state is reset every step.** A fresh SGLD optimizer is built for each update, which matches the reference code. Weight decay applies only in the outer step.
-- `opt.gamma` holds the current scope. Everything is fp32 and single-device. AMP and DDP are not handled.
+- **Cost:** L forward/backward passes per update. `--epochs` in `train_glue.py` counts data passes, so Entropy-SGD makes L× fewer updates than AdamW.
+- **Memory:** two extra weight copies (`x`, `μ`) plus inner optimizer state.
+- **GLUE defaults are untuned.** The paper's η′ suits SGD on CNNs, so `train_glue.py` uses Adam inside with `η′ = --lr`.
+- Inner optimizer is rebuilt every step (as in the reference code); weight decay applies only to the outer step.
+- `opt.gamma` holds the current scope. fp32, single-device only (no AMP/DDP).

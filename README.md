@@ -1,53 +1,48 @@
 # Flat vs. Sharp Minima — E0 334 Project
 
-PyTorch implementations for the papers in our presentation, plus the code for our contribution (curvature of GLUE fine-tuning).
+PyTorch implementations of the papers in our presentation, plus our contribution: curvature of GLUE fine-tuning.
 
 | Folder | Contents |
 |--------|----------|
-| `SAM/` | SAM / ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (`sam_optim`) and GLUE fine-tuning (`train_glue.py`) |
-| `Entropy-SGD/` | Entropy-SGD / Entropy-Adam (`entropy_optim`) and GLUE fine-tuning (`train_glue.py`) |
-| `Maximum-Hessian/` | λmax and Hessian-trace tools (`hessian_tools`) and the vision experiments of Kaur et al. (`train_vision.py`) |
+| `SAM/` | SAM / ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (`sam_optim`) + GLUE fine-tuning |
+| `Entropy-SGD/` | Entropy-SGD / Entropy-Adam (`entropy_optim`) + GLUE fine-tuning |
+| `Maximum-Hessian/` | λmax and Hessian-trace tools (`hessian_tools`) + Kaur et al. vision experiments |
 | `project.tex` | Presentation notes (compile on Overleaf) |
 
-## Setup on a new machine
+## Setup
 
-Requirements: Linux, Python ≥ 3.9, and an NVIDIA GPU with a recent driver.
-
-With the data in a `datasets/` folder next to the repo:
+Needs Linux, Python ≥ 3.9 and an NVIDIA GPU.
 
 ```bash
-git clone https://github.com/APatkuri/E0_334_Project.git    # or: cd E0_334_Project && git pull
+git clone https://github.com/APatkuri/E0_334_Project.git
 cd E0_334_Project
-DATA_ROOT=$(realpath ../datasets) bash setup.sh
-source .venv/bin/activate
+DATA_ROOT=$(realpath ../datasets) bash setup.sh   # DATA_ROOT defaults to ./data
+source .venv/bin/activate                         # also sets DATA_ROOT and HF_HOME
 ```
 
-`setup.sh` does three things:
+`setup.sh` creates `.venv`, installs `requirements.txt`, and runs `prepare_data.py` to download:
 
-1. creates `.venv`, falling back to `virtualenv` if `python3 -m venv` is unavailable;
-2. installs `requirements.txt`;
-3. runs `prepare_data.py`, which prints the GPU and package versions and downloads all the data.
+| Data | Size | Location |
+|------|------|----------|
+| GLUE (RTE, MRPC, CoLA, SST-2, QNLI, QQP, MNLI) | 1–2 GB | `$DATA_ROOT/huggingface` |
+| `bert-base-uncased` | 0.45 GB | `$DATA_ROOT/huggingface` |
+| CIFAR-10, Fashion-MNIST | 0.4 GB | `$DATA_ROOT/vision` |
 
-Everything goes under `DATA_ROOT` (default: `./data`):
+Plan for ~10 GB of disk including the environment.
 
-| Data | Size | Stored in |
-|------|------|-----------|
-| GLUE: RTE, MRPC, CoLA, SST-2, QNLI, QQP, MNLI | ≈ 1–2 GB (with tokenization caches) | `$DATA_ROOT/huggingface` |
-| `bert-base-uncased` weights | ≈ 0.45 GB | `$DATA_ROOT/huggingface` |
-| CIFAR-10 and Fashion-MNIST | ≈ 0.4 GB | `$DATA_ROOT/vision` |
+**GPU memory** (BERT-base, batch 32): 5–6 GB for AdamW and SAM; 8–10 GB for Eigen-SAM, X-SAM and λmax. On 8 GB, halve `--batch_size`.
 
-The Python environment adds another 3–5 GB, so plan for about 10 GB free. On the GPU, BERT-base at batch 32 needs about 5–6 GB for AdamW and the SAM variants and 8–10 GB for Eigen-SAM, X-SAM and the λmax measurements. With 8 GB, halve `--batch_size` for those.
+**Options**
 
-`source .venv/bin/activate` also sets `DATA_ROOT` and `HF_HOME`, so every script finds the data without extra flags.
+| Need | Command |
+|------|---------|
+| Different CUDA build | `TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 bash setup.sh` |
+| GLUE only | `bash setup.sh --glue rte mrpc cola --no_vision` |
+| Offline compute node | Run setup on a login node, then `export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1` |
 
-**Options:**
-- **CUDA build.** If the default PyTorch wheel doesn't match the machine's CUDA driver (check with `nvidia-smi`), choose one: `TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 bash setup.sh`.
-- **Partial download.** Arguments to `setup.sh` are passed to `prepare_data.py`. For example, `bash setup.sh --glue rte mrpc cola --no_vision` downloads only what the GLUE experiments need.
-- **No internet on the compute node.** Run setup on a login node, then `export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1` when training.
+## Smoke test
 
-## First runs
-
-Each takes a few minutes on a GPU. Together they exercise every code path.
+A few minutes each on a GPU; together they cover every code path.
 
 ```bash
 cd SAM
