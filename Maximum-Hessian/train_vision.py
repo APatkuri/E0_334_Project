@@ -17,6 +17,7 @@ Examples:
 import argparse
 import json
 import math
+import os
 import time
 
 import torch
@@ -49,7 +50,8 @@ def parse_args():
     p.add_argument("--trace_samples", type=int, default=0, help="Hutchinson samples (0 = skip)")
     p.add_argument("--between_iterates", action="store_true",
                    help="max lambda_max over 8 points between the final iterate and one extra step (BN)")
-    p.add_argument("--data_dir", default="./data")
+    p.add_argument("--data_dir", default=os.path.join(os.environ.get("DATA_ROOT", "."), "vision"),
+                   help="default: $DATA_ROOT/vision (set by setup.sh)")
     p.add_argument("--out", default="results.jsonl")
     return p.parse_args()
 

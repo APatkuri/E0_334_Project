@@ -1,0 +1,6 @@
+torch>=2.1
+torchvision
+transformers>=4.40
+datasets>=2.18
+numpy
+matplotlib

@@ -31,10 +31,6 @@ with hessian_mode(model):                        # dropout off; BN uses batch st
 
 ## Reproducing the paper
 
-```bash
-pip install -r requirements.txt
-```
-
 Each run appends to `results.jsonl`. The values are the paper's ranges; use several `--seed` values (the paper uses 3–5).
 
 ```bash

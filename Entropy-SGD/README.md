@@ -37,7 +37,6 @@ Extra keyword arguments (`lr`, `momentum`, `weight_decay`, ...) go to the outer 
 ## Scripts
 
 ```bash
-pip install -r requirements.txt
 python train_glue.py --task sst2 --optim adamw              # baseline
 python train_glue.py --task sst2 --optim entropysgd --sgld_steps 5 --gamma 0.03 --gamma_growth 1e-3
 python train_glue.py --task rte  --optim entropysgd --sgld_optim sgd --sgld_lr 1e-3 --sgld_momentum 0.9
