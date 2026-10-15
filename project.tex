@@ -700,12 +700,14 @@ None of the papers we present runs Entropy-SGD, Eigen-SAM or X-SAM on transforme
 \begin{tabularx}{\textwidth}{@{}p{3.2cm}L@{}}
 \toprule
 \textbf{Model} & BERT-base (uncased), fine-tuned \\
-\textbf{Tasks} & RTE (2.5k train), MRPC (3.7k), CoLA (8.5k), and SST-2 subsampled to 5\% and 20\%: low-data settings where Bahri et al.\ saw the largest gains \\
-\textbf{Optimizers} & AdamW (baseline); SAM, ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (all with AdamW as the base optimizer); Entropy-SGD in its Entropy-Adam form \\
-\textbf{Fair comparison} & Equal number of gradient evaluations per run (SAM-type methods cost $\approx 2\times$ per step, Entropy-SGD $L\times$), also reported at equal steps; the same size of hyperparameter grid for each method; 5 seeds; mean $\pm$ std \\
-\textbf{Generalization} & Standard dev metric per task (accuracy, F1, Matthews correlation) and the train--dev gap \\
-\textbf{Curvature} & At the final checkpoint, on a fixed 1k-example training subset with dropout off: $\lmax$ by power iteration, $\tr(H)$ by Hutchinson, and SAM sharpness at fixed $\rho$. During training: $\lmax$ and the angle between the update and $v_1$ every $p$ steps \\
-\textbf{Kaur-style test} & SAM $\rho$ sweep at a small and a large batch size; scatter $\lmax$ against dev score over all runs and report rank correlation \\
+\textbf{Tasks} & RTE (2.5k train), MRPC (3.7k), CoLA (8.5k), and SST-2 subsampled to 5\% and 20\%. Bahri et al.\ report SAM's largest relative gains at these sampling rates (5\%: Tables 6--7; $\approx$20\%: Fig.~1), though on SuperGLUE and CBQA, not GLUE \\
+\textbf{Base recipe} & AdamW, batch 32, 3 epochs, max length 128, 10\% warmup and linear decay, weight decay 0.01 (Devlin et al., Sec.~4.1) \\
+\textbf{Optimizers} & AdamW (baseline); SAM, ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (all with AdamW as the base optimizer); Entropy-SGD in its Entropy-Adam form (Sec.~5.4.2: $L=5$, fixed $\gamma$, $\beta_1=0.5$) \\
+\textbf{Tuning} & The protocol of the SAM-variant papers, with each method's grid from its own paper. (1) AdamW lr $\in\{2,3,4,5\}\times10^{-5}$ (Devlin et al.), then fixed for all methods (GSAM App.~B.1). (2) SAM $\rho\in\{0.02,0.05,0.1,0.15,0.2,0.3\}$ with the ascent on $1/4$ of the batch (Bahri et al.); ASAM at $10\times$ that grid (GSAM App.~B.1). (3) SAM's best $\rho$ reused by GSAM ($\alpha\in\{0.1,0.2,0.3\}$, $\rho$ tied to the lr), WSAM ($\gamma\in\{0.80,\dots,0.98\}$), Eigen-SAM ($\alpha\in\{0.05,0.1,0.2\}$, $p=100$, $q=5$) and X-SAM ($\alpha=0.2$). Selection on the dev set with one seed \\
+\textbf{Fair comparison} & Equal number of gradient evaluations per run, as in Eigen-SAM (App.~E) and Entropy-SGD (``effective epochs'', Sec.~5.2): an update costs 1 (AdamW), 1.25 (SAM), 2 (ASAM, GSAM, WSAM), 2.11 (Eigen-SAM, X-SAM) or $L=5$ (Entropy-Adam); 5 seeds of each method's best setting; mean $\pm$ std \\
+\textbf{Generalization} & Standard dev metric per task (accuracy, F1 for MRPC, Matthews correlation for CoLA) at the final checkpoint, and the train--dev gap \\
+\textbf{Curvature} & At the final checkpoint, on a fixed 1k-example training subset with dropout off: $\lmax$ by power iteration, $\tr(H)$ by Hutchinson, and SAM sharpness at fixed $\rho$. During training, at 5 points: $\lmax$ and the angle between $v_1$ and both the gradient (X-SAM's diagnostic) and the actual update \\
+\textbf{Kaur-style test} & Kaur et al.'s Sec.~3.3 protocol on SST-2 (20\%): constant lr, train to 99\% train accuracy, $\rho\in\{0,0.02,\dots,0.1\}$, two learning rates, a small (32) and a large (256) batch, 4 seeds. Plus: scatter $\lmax$ against dev score over all runs and report rank correlation \\
 \bottomrule
 \end{tabularx}
 \end{center}
@@ -713,12 +715,20 @@ None of the papers we present runs Entropy-SGD, Eigen-SAM or X-SAM on transforme
 \paragraph{Note on Adam.} AdamW rescales every coordinate, so the curvature it ``sees'' is the preconditioned Hessian, not $H$.
 Where feasible we also report $\lmax$ of the preconditioned Hessian.
 
+\paragraph{Unavoidable deviations from the source papers.} The model (BERT, not T5 or a CNN) and the tasks.
+For Entropy-Adam, the paper's SGLD step $\eta'\in[0.1,1]$ is meant for SGD on CNNs and would destroy pre-trained weights, so we use Adam with a fixed $\eta'$ equal to the lr. Our $\gamma$ grid is $\{0.003,0.01,0.03\}$, and we record the paper's tuning signal $\|x-\mu\|/\|\nabla f\|$.
+X-SAM does not state $p$, so we use Eigen-SAM's $p=100$.
+We report the final checkpoint, where curvature is measured, rather than Bahri et al.'s best checkpoint.
+The Kaur-style test uses AdamW and a large batch of 256 (2\% of the data, not 10\%), since larger batches would need gradient accumulation.
+
 \subsection{Status}
 
 \begin{itemize}
   \item \textbf{Done:} PyTorch implementations of SAM/ASAM, GSAM, WSAM, Eigen-SAM, X-SAM and Entropy-SGD/Entropy-Adam behind one \texttt{optimizer.step(closure)} interface,
-        with power iteration for $\lmax$; curvature tools ($\lmax$, Hessian trace) validated against the exact Hessian; GLUE fine-tuning scripts.
-  \item \textbf{To do:} a single runner with compute matching and seeds; final-checkpoint $\lmax$, trace and angle measurements; task-specific metrics; the runs and analysis.
+        with power iteration for $\lmax$; curvature tools ($\lmax$, Hessian trace) validated against the exact Hessian; GLUE fine-tuning scripts;
+        a single runner (\texttt{Curvature-GLUE/run\_glue.py}) with compute matching, task-specific metrics, and final-checkpoint and in-training curvature measurements;
+        a job queue (\texttt{sweep.py}) for the tuning stages above and for the Kaur et al.\ vision reproduction.
+  \item \textbf{To do:} the runs and analysis; $\lmax$ of the preconditioned Hessian.
 \end{itemize}
 
 \subsection{What each outcome would mean}

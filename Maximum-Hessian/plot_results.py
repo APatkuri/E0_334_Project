@@ -10,6 +10,7 @@ Scatter mode (Figs. 2, 4): lambda_max against test accuracy, one point per run.
     python plot_results.py results.jsonl --scatter --group batch_size --out fig2.png
 
 --where key=value keeps only matching runs, e.g. --where model=vgg11 --where lr=0.005.
+Several result files can be given, e.g. ../results/vision/*.jsonl from ../sweep.py.
 """
 import argparse
 import json
@@ -23,7 +24,7 @@ import matplotlib.pyplot as plt
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("results")
+    p.add_argument("results", nargs="+")
     p.add_argument("--x", default="lr", help="swept hyperparameter (lr, rho, dropout, batch_size)")
     p.add_argument("--group", default="batch_size", help="one line per value of this field")
     p.add_argument("--scatter", action="store_true", help="plot lambda_max vs test accuracy instead")
@@ -32,8 +33,8 @@ def parse_args():
     return p.parse_args()
 
 
-def load(path, where):
-    runs = [json.loads(line) for line in open(path) if line.strip()]
+def load(paths, where):
+    runs = [json.loads(line) for path in paths for line in open(path) if line.strip()]
     runs = [r for r in runs if "lmax" in r]  # skip diverged runs
     for cond in where:
         key, value = cond.split("=", 1)

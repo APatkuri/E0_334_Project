@@ -7,6 +7,8 @@ PyTorch implementations of the papers in our presentation, plus our contribution
 | `SAM/` | SAM / ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (`sam_optim`) + GLUE fine-tuning |
 | `Entropy-SGD/` | Entropy-SGD / Entropy-Adam (`entropy_optim`) + GLUE fine-tuning |
 | `Maximum-Hessian/` | λmax and Hessian-trace tools (`hessian_tools`) + Kaur et al. vision experiments |
+| `Curvature-GLUE/` | Our contribution: every optimizer on BERT/GLUE with curvature measurements |
+| `sweep.py` | Runs all experiments as a GPU job queue, settings taken from the papers |
 | `project.tex` | Presentation notes (compile on Overleaf) |
 
 ## Setup
@@ -54,3 +56,16 @@ python train_glue.py --task rte --epochs 1 --optim entropysgd
 cd ../Maximum-Hessian
 python train_vision.py --dataset fashion_mnist --model mlp --lr 0.1 --max_epochs 2
 ```
+
+## Running the experiments
+
+`sweep.py` queues each experiment phase over the GPUs you name. Results go to `results/`; finished runs are skipped, so a phase can be restarted at any time. Run it inside tmux on the GPU node.
+
+```bash
+python sweep.py glue-smoke --gpus 3 && python sweep.py vision-smoke --gpus 3   # check everything first
+python sweep.py glue-lr --gpus 3 4 --per_gpu 2                                  # then glue-rho, glue-variants, glue-final
+python sweep.py vision-3.4 --gpus 5                                             # vision phases in any order
+python sweep.py --help                                                          # all phases
+```
+
+Settings and their paper sources: `Curvature-GLUE/README.md` (GLUE) and `Maximum-Hessian/README.md` (Kaur et al.).

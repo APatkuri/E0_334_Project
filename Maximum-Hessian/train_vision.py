@@ -50,6 +50,8 @@ def parse_args():
     p.add_argument("--trace_samples", type=int, default=0, help="Hutchinson samples (0 = skip)")
     p.add_argument("--between_iterates", action="store_true",
                    help="max lambda_max over 8 points between the final iterate and one extra step (BN)")
+    p.add_argument("--lmax_every", type=int, default=0,
+                   help="also record lambda_max every this many steps during training (Fig. 5; 0 = off)")
     p.add_argument("--data_dir", default=os.path.join(os.environ.get("DATA_ROOT", "."), "vision"),
                    help="default: $DATA_ROOT/vision (set by setup.sh)")
     p.add_argument("--out", default="results.jsonl")
@@ -152,8 +154,14 @@ def main():
     model.train()
     params = [p for p in model.parameters() if p.requires_grad]
 
+    # lambda_max on a fixed training subset (same subset for every run)
+    sub = torch.randperm(n, generator=torch.Generator().manual_seed(1234))[:args.lmax_examples]
+    batches = [(x_train[sub[i:i + args.chunk]].to(device), y_train[sub[i:i + args.chunk]].to(device))
+               for i in range(0, len(sub), args.chunk)]
+    loss_fn = lambda b: F.cross_entropy(model(b[0]), b[1])
+
     start_time = time.time()
-    steps, epoch, train_acc, diverged = 0, 0, 0.0, False
+    steps, epoch, train_acc, diverged, lmax_curve = 0, 0, 0.0, False, []
     while epoch < args.max_epochs:
         epoch += 1
         perm = torch.randperm(n)
@@ -164,6 +172,9 @@ def main():
             if not math.isfinite(loss):
                 diverged = True
                 break
+            if args.lmax_every and steps % args.lmax_every == 0:
+                with hessian_mode(model):
+                    lmax_curve.append((steps, top_eigenvalue(params, loss_fn, batches, iters=args.lmax_iters)[0]))
         if diverged:
             break
         train_acc = accuracy(model, x_train, y_train, args.chunk, device)
@@ -173,14 +184,10 @@ def main():
 
     result = dict(vars(args), epochs=epoch, steps=steps, train_acc=train_acc, diverged=diverged,
                   reached_target=train_acc >= args.target_acc, two_over_lr=2.0 / args.lr)
+    if lmax_curve:
+        result["lmax_curve"] = lmax_curve
     if not diverged:
         result["test_acc"] = accuracy(model, x_test, y_test, args.chunk, device)
-
-        # lambda_max on a fixed training subset (same subset for every run with the same seed)
-        sub = torch.randperm(n, generator=torch.Generator().manual_seed(1234))[:args.lmax_examples]
-        batches = [(x_train[sub[i:i + args.chunk]].to(device), y_train[sub[i:i + args.chunk]].to(device))
-                   for i in range(0, len(sub), args.chunk)]
-        loss_fn = lambda b: F.cross_entropy(model(b[0]), b[1])
         if args.between_iterates:  # one extra ordinary training step (dropout on)
             start = [p.detach().clone() for p in params]
             idx = torch.randperm(n)[:args.batch_size]
