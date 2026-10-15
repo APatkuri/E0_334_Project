@@ -29,7 +29,6 @@ Any extra keyword arguments (`lr`, `momentum`, `weight_decay`, ...) go to the ba
 
 ```bash
 pip install -r requirements.txt
-python sanity_check.py                                  # few-second CPU check of all optimizers
 python train_glue.py --task sst2 --optim sam --ascent_frac 0.25
 python train_glue.py --task rte  --optim gsam --rho_min 0.01 --alpha 0.1
 python train_glue.py --task mrpc --optim wsam --gamma 0.9

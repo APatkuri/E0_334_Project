@@ -1,0 +1,783 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,bm}
+\usepackage{array,booktabs,tabularx,longtable}
+\usepackage{algorithm,algpseudocode}
+\usepackage{enumitem}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[colorlinks=true,linkcolor=MidnightBlue,citecolor=MidnightBlue,urlcolor=MidnightBlue]{hyperref}
+
+% ---- notation ----------------------------------------------------------------
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Ls}{L_S}                    % training loss
+\newcommand{\Ld}{L_{\mathcal{D}}}        % population loss
+\newcommand{\lmax}{\lambda_{\max}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\N}{\mathcal{N}}
+\newcommand{\gp}{g_{\mathrm{adv}}}
+\newcommand{\pp}{\,pp}                   % percentage points
+\newcommand{\presenter}[1]{\noindent\textit{Presenter: #1}\par\medskip}
+
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\setlist{itemsep=2pt,topsep=4pt}
+\renewcommand{\arraystretch}{1.15}
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+
+\title{Flat vs.\ Sharp Minima and Generalization\\[4pt]
+\large E0 334 (Deep Learning for NLP), IISc --- Paper Presentation}
+\author{Sai Aditya \and Sai Anoop \and Sai Vinay}
+\date{27 and 29 October 2026}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Overview}
+% ============================================================================
+
+\subsection{The question}
+
+A modern network can reach almost zero training loss at many different weight settings, and these
+settings can differ a lot in test accuracy. A long-standing explanation is the geometry of the loss
+around the solution:
+
+\begin{quote}
+\textbf{Hypothesis (H).} \emph{Among weights with low training loss, those in \textbf{flat} regions (the loss stays low when
+the weights are perturbed) generalize better than those in \textbf{sharp} regions (the loss rises quickly).}
+\end{quote}
+
+The papers we present attack (H) from three directions:
+\begin{enumerate}
+  \item \textbf{Build an optimizer that seeks flatness, then check accuracy}: Entropy-SGD, SAM and its variants.
+  \item \textbf{Take the best such optimizer to language models}: SAM for T5 (Bahri et al.).
+  \item \textbf{Test whether a flatness measure actually predicts generalization}: the maximum Hessian eigenvalue (Kaur et al.).
+\end{enumerate}
+
+\subsection{Papers and presenters}
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{2.3cm}LLp{2.6cm}@{}}
+\toprule
+\textbf{Part / presenter} & \textbf{Papers} & \textbf{Notion of flatness} & \textbf{Domain} \\
+\midrule
+I.\ Entropy-SGD \newline \emph{Sai Anoop} &
+Chaudhari et al., \emph{Entropy-SGD: Biasing Gradient Descent into Wide Valleys} (ICLR 2017) &
+Local entropy: how much low-loss volume surrounds $w$ &
+MNIST, CIFAR-10, PTB, char-level LM \\
+\addlinespace
+II.\ SAM family \newline \emph{Sai Aditya} &
+Foret et al.\ (SAM, ICLR 2021); Bahri et al., \emph{SAM Improves Language Model Generalization} (ACL 2022);
+GSAM (ICLR 2022); WSAM (KDD 2023); Eigen-SAM (2025); Duan et al., \emph{X-SAM} (2026) &
+Worst-case loss in a ball of radius $\rho$; later variants target $\lmax$ directly &
+GLUE, SuperGLUE, QA (T5); CIFAR, Fashion-MNIST \\
+\addlinespace
+III.\ Max.\ Hessian eigenvalue \newline \emph{Sai Vinay} &
+Kaur, Cohen, Lipton, \emph{On the Maximum Hessian Eigenvalue and Generalization} (2023) &
+$\lmax$, the top eigenvalue of the Hessian &
+CIFAR-10, Fashion-MNIST \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Lecture plan (proposed)}
+
+\begin{center}\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Lecture} & \textbf{Segment} & \textbf{Presenter} & \textbf{Time} \\
+\midrule
+1 & Overview and background (Sections 1--2)             & shared     & 15 min \\
+1 & Part I: Entropy-SGD --- ideas, math, experiments     & Sai Anoop  & 40 min \\
+1 & Part II(a): SAM and SAM for language models          & Sai Aditya & 35 min \\
+\midrule
+2 & Part II(b): GSAM, WSAM, Eigen-SAM, X-SAM             & Sai Aditya & 30 min \\
+2 & Part III: the maximum Hessian eigenvalue             & Sai Vinay  & 35 min \\
+2 & Synthesis and our contribution                       & all        & 20 min \\
+2 & Questions                                            &            & 5 min \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================================
+\section{Background: loss landscapes and how to measure flatness}
+\label{sec:background}
+% ============================================================================
+
+\subsection{Notation}
+
+\begin{itemize}
+  \item Weights $w \in \R^d$. Training set $S = \{(x_i,y_i)\}_{i=1}^n$ drawn from a distribution $\mathcal{D}$.
+        Per-example loss $\ell(w;x,y)$ (cross-entropy).
+  \item Training loss $\Ls(w) = \frac1n\sum_i \ell(w;x_i,y_i)$; population (test) loss $\Ld(w) = \E_{(x,y)\sim\mathcal{D}}\,\ell(w;x,y)$.
+        The \textbf{generalization gap} is $\Ld(w) - \Ls(w)$. We write $L$ for $\Ls$ when the context is clear.
+  \item Gradient $g = \nabla L(w)$; mini-batch gradient $\nabla L_B(w)$; learning rate $\eta$; batch size $B$.
+  \item Hessian $H = \nabla^2 L(w) \in \R^{d\times d}$ with eigen-decomposition $H = \sum_{i=1}^d \lambda_i v_i v_i^\top$,
+        $\lambda_1 = \lmax \ge \lambda_2 \ge \dots$, and unit eigenvectors $v_i$.
+\end{itemize}
+
+\subsection{Curvature is what ``flat'' and ``sharp'' mean}
+
+Near $w$, a second-order Taylor expansion gives
+\begin{equation}
+  L(w+\delta) \approx L(w) + g^\top \delta + \tfrac12\,\delta^\top H \delta .
+  \label{eq:taylor}
+\end{equation}
+At a minimum $g = 0$, so the loss increase under a perturbation is decided by $H$. Moving a distance $\rho$ along
+eigenvector $v_i$ raises the loss by $\tfrac12 \rho^2 \lambda_i$. A minimum is \emph{sharp} along directions with large $\lambda_i$
+and \emph{flat} along directions with $\lambda_i \approx 0$. Different flatness measures summarize the spectrum differently:
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{3.6cm}p{5.4cm}Lp{2.2cm}@{}}
+\toprule
+\textbf{Measure} & \textbf{Definition} & \textbf{Meaning at a minimum} & \textbf{Used by} \\
+\midrule
+Top eigenvalue $\lmax$ & $\max_{\|u\|=1} u^\top H u$ & Loss increase in the \emph{worst} direction: $\max_{\|\delta\|\le\rho} L(w+\delta) - L(w) \approx \tfrac12\rho^2\lmax$ & SAM family, Kaur \\
+Trace $\tr(H)$ & $\sum_i \lambda_i$ & Loss increase under \emph{random} noise: $\E_{\delta\sim\N(0,\sigma^2 I)}[L(w+\delta)] - L(w) \approx \tfrac12\sigma^2\tr(H)$ & X-SAM (spectrum) \\
+Full spectrum & all $\lambda_i$ & How many directions are flat vs.\ sharp & Entropy-SGD, X-SAM \\
+Local entropy & $\log\!\int e^{-L(w') - \frac{\gamma}{2}\|w-w'\|^2}\,dw'$ & Low-loss \emph{volume} around $w$ & Entropy-SGD \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Computing curvature without forming the Hessian}
+
+For a model with $d \sim 10^8$ weights, $H$ has $d^2$ entries and cannot be stored. Everything above is computed
+from \textbf{Hessian-vector products} (Pearlmutter, 1994):
+\begin{equation}
+  Hv = \nabla_w\big(\nabla_w L(w)^\top v\big),
+\end{equation}
+i.e.\ differentiate the scalar $g^\top v$ once more. This costs about two backward passes.
+\begin{itemize}
+  \item \textbf{Power iteration for $\lmax$:} start from a random unit $v$, repeat $v \leftarrow Hv / \|Hv\|$. The Rayleigh quotient
+        $v^\top H v$ converges to $\lmax$ (assuming the top eigenvalue is also the largest in magnitude).
+  \item \textbf{Hutchinson's estimator for the trace:} $\tr(H) = \E_z[z^\top H z]$ for random $z$ with i.i.d.\ $\pm1$ entries.
+\end{itemize}
+
+\subsection{Why flat minima might generalize}
+
+\begin{itemize}
+  \item \textbf{Robustness.} Training and test losses are slightly different functions of $w$. At a flat minimum,
+        small shifts between the two surfaces change the loss little (Hochreiter and Schmidhuber, 1997).
+  \item \textbf{Description length / Bayesian view.} A flat minimum can be specified with fewer bits of precision. Under a prior,
+        a wide valley carries more probability mass than a narrow one of the same depth.
+  \item \textbf{PAC-Bayes bounds.} The test loss of weights perturbed by noise is bounded by the perturbed training loss plus a complexity
+        term. Flat minima keep the perturbed training loss low. This is the formal motivation for SAM (Part II).
+  \item \textbf{But:} sharpness is not invariant to reparameterization. One can rescale a ReLU network so the function is unchanged but $\lmax$
+        is arbitrarily large (Dinh et al., 2017). Part III takes this further with realistic training runs.
+\end{itemize}
+
+% ============================================================================
+\section{Part I --- Entropy-SGD}
+\label{sec:esgd}
+% ============================================================================
+\presenter{Sai Anoop}
+
+Chaudhari, Choromanska, Soatto, LeCun, Baldassi, Borgs, Chayes, Sagun, Zecchina. \emph{Entropy-SGD: Biasing Gradient Descent into Wide Valleys}. ICLR 2017.
+
+\subsection{Motivation: what the Hessian looks like at a good solution}
+
+The authors compute the full Hessian spectrum at the end of training for small networks (Section~\ref{sec:esgd-setup}).
+For a LeNet-style CNN on MNIST:
+\begin{itemize}
+  \item about 94\% of the eigenvalues have $|\lambda| < 10^{-4}$, so almost every direction is flat;
+  \item a long positive tail of a few large eigenvalues (up to $\approx 40$);
+  \item a very short negative tail (most negative $\approx -0.46$): the descent directions the optimizer missed are nearly flat too.
+\end{itemize}
+The same shape appears for an MLP, an LSTM and a larger CNN. So good solutions found by SGD lie in \emph{wide valleys}.
+The question is: \emph{can we modify SGD to seek such regions on purpose?}
+
+\subsection{From the Gibbs distribution to local entropy}
+
+The Gibbs distribution of a loss $f$ at inverse temperature $\beta$ is
+\begin{equation}
+  P(w;\beta) = Z_\beta^{-1}\, e^{-\beta f(w)} .
+\end{equation}
+As $\beta\to\infty$ it concentrates on the global minimum, so minimizing $f$ is the same as finding its mode. To focus on
+\emph{wide} regions instead, add a coupling that keeps the distribution near a reference point $w$ (with $\beta=1$):
+\begin{equation}
+  P(w'; w, \gamma) \propto \exp\!\Big(-f(w') - \frac{\gamma}{2}\|w - w'\|^2\Big).
+  \label{eq:local-gibbs}
+\end{equation}
+
+\paragraph{Definition (local entropy).}
+\begin{equation}
+  F(w,\gamma) = \log \int_{\R^d} \exp\!\Big(-f(w') - \frac{\gamma}{2}\|w - w'\|^2\Big)\, dw' .
+  \label{eq:local-entropy}
+\end{equation}
+$F$ is the log-partition function of~\eqref{eq:local-gibbs}. It is large when many $w'$ near $w$ have low loss, so it measures
+the \emph{depth and width} of the valley at once. Entropy-SGD solves
+\begin{equation}
+  \min_w\; -F(w,\gamma).
+\end{equation}
+
+\paragraph{The scope $\gamma$.} Large $\gamma$ confines $w'$ to a tiny neighbourhood and $-F(w,\gamma) \to f(w) + \text{const}$
+(the original problem). Small $\gamma$ averages over a wide region, so the landscape of $-F$ is very smooth. In the paper's 1-D
+cartoon, a shallow but wide minimum becomes the \emph{global} minimum of $-F$, even though a deeper sharp minimum exists.
+
+\paragraph{Why not classical entropy or plain smoothing?} Classical entropy would favour any wide region, including wide plateaus
+of high loss. Convolving $f$ with a kernel can create a spurious minimum between two sharp valleys. Local entropy weights each
+region by $e^{-f}$, so it rewards regions that are \emph{both} low and wide.
+
+\subsection{The gradient of local entropy}
+
+Differentiate~\eqref{eq:local-entropy} under the integral sign. With $Z(w) = \int e^{-f(w') - \frac{\gamma}{2}\|w-w'\|^2} dw'$,
+\begin{equation}
+  \nabla_w F = \frac{1}{Z(w)} \int -\gamma (w - w')\, e^{-f(w') - \frac{\gamma}{2}\|w-w'\|^2}\, dw'
+            = -\gamma\big(w - \langle w' \rangle\big),
+  \qquad \langle w' \rangle = \E_{P(w';w,\gamma)}[w'] .
+  \label{eq:entropy-grad}
+\end{equation}
+So the descent direction for $-F$ is $\gamma(w - \langle w'\rangle)$: \emph{move $w$ towards the mean of the local Gibbs distribution}.
+When two nearby minima have similar loss, $\langle w'\rangle$ lies closer to the wider one, so the step points towards wide valleys.
+
+\paragraph{Worked example (ours): a quadratic valley.} Take $f(w') = \frac{a}{2} w'^2$ in 1-D. Completing the square in~\eqref{eq:local-entropy},
+\begin{equation}
+  -F(w,\gamma) = \frac12\,\frac{a\gamma}{a+\gamma}\, w^2 + \text{const},
+  \qquad \langle w'\rangle = \frac{\gamma}{a+\gamma}\, w .
+\end{equation}
+The effective curvature $\frac{a\gamma}{a+\gamma}$ is always below $\min(a,\gamma)$. Sharp directions ($a \gg \gamma$) are \emph{capped} at about $\gamma$,
+while flat directions ($a \ll \gamma$) are almost unchanged. Local entropy therefore removes sharp curvature, and $\gamma$ sets the cap.
+
+\subsection{Estimating $\langle w'\rangle$ with Langevin dynamics}
+
+The expectation in~\eqref{eq:entropy-grad} is over a high-dimensional distribution, so it is estimated by MCMC.
+Stochastic gradient Langevin dynamics (SGLD; Welling and Teh, 2011) samples from $p(w') \propto e^{-U(w')}$ with noisy gradient steps:
+\begin{equation}
+  w' \leftarrow w' - \eta' \nabla U(w') + \sqrt{\eta'}\,\varepsilon\, \xi, \qquad \xi\sim\N(0,I).
+\end{equation}
+Here $U(w') = f(w') + \frac{\gamma}{2}\|w-w'\|^2$, so $\nabla U(w') = \nabla f(w') - \gamma(w - w')$. This is SGD on $f$ plus a spring pulling
+$w'$ back to $w$, plus noise. Averaging the SGLD iterates gives $\mu \approx \langle w'\rangle$.
+
+\begin{algorithm}[h]
+\caption{Entropy-SGD (one outer step)}
+\begin{algorithmic}[1]
+\Require weights $w$; scope $\gamma$; outer lr $\eta$; SGLD step $\eta'$; thermal noise $\varepsilon$; SGLD steps $L$; averaging weight $\alpha$
+\State $w' \gets w$, \; $\mu \gets w$
+\For{$\ell = 1, \dots, L$}
+  \State sample a mini-batch $B_\ell$
+  \State $dw' \gets \nabla L_{B_\ell}(w') - \gamma\,(w - w')$
+  \State $w' \gets w' - \eta'\, dw' + \sqrt{\eta'}\,\varepsilon\,\N(0,I)$
+  \State $\mu \gets (1-\alpha)\,\mu + \alpha\, w'$
+\EndFor
+\State $w \gets w - \eta\,\gamma\,(w - \mu)$ \Comment{in practice $w \gets w - \eta\,(w-\mu)$, see scoping}
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Practical details.}
+\begin{itemize}
+  \item ``SGD inside SGD'': each outer update costs $L$ gradient evaluations ($L \in [5, 20]$). Comparisons use \emph{effective epochs} $=$ epochs $\times L$.
+  \item $\alpha = 0.75$ puts more weight on later samples, which acts like burn-in. $\eta' \in [0.1, 1]$ is kept fixed (annealing it hurt).
+        $\varepsilon \in [10^{-4}, 10^{-3}]$.
+  \item Momentum (Nesterov) or Adam can be used in either loop. Entropy-Adam feeds $w - \mu$ to Adam as the gradient.
+  \item \textbf{Scoping:} $\gamma$ grows during training, $\gamma_t = \gamma_0 (1+\gamma_1)^t$, so the search starts coarse (smooth landscape) and becomes finer.
+        Because a growing $\gamma$ would interfere with the learning-rate schedule, the factor $\gamma$ is dropped from the outer step.
+  \item Tuning heuristic: pick $\gamma$ so that $\|\gamma(w-\mu)\|$ is comparable to the plain SGD gradient.
+\end{itemize}
+
+\subsection{Theory: a smoother objective and a stability bound}
+
+Assume $f$ is $\alpha$-Lipschitz and $\beta$-smooth, and (for the analysis) that no Hessian eigenvalue lies in $[-2\gamma - c,\, c]$ for some $c>0$.
+
+\begin{lemma}[Lemma 2]
+$-F(\cdot,\gamma)$ is $\frac{\alpha}{1+\gamma^{-1}c}$-Lipschitz and $\frac{\beta}{1+\gamma^{-1}c}$-smooth, i.e.\ smoother than $f$.
+\end{lemma}
+
+\begin{theorem}[Hardt et al., 2016]
+Uniform stability bounds generalization: if changing one training example changes the loss of the output by at most $\epsilon$, the expected
+generalization gap is at most $\epsilon$. For SGD on an $\alpha$-Lipschitz, $\beta$-smooth loss with step $\eta_t \le 1/t$ for $T$ steps on $N$ samples,
+$\epsilon \lesssim \frac1N\, \alpha^{1/(1+\beta)}\, T^{1 - 1/(1+\beta)}$.
+\end{theorem}
+
+Substituting the smaller constants of Lemma~2 gives a smaller stability bound for Entropy-SGD than for SGD (their Eq.~9).
+\textbf{Caveat (the authors' Remark 4):} the eigenvalue-gap assumption is ``admittedly unrealistic'', since the motivating experiment shows
+most eigenvalues are near zero. The bound is an intuition, not a guarantee.
+
+\subsection{Experimental setup and results}
+\label{sec:esgd-setup}
+
+\paragraph{(A) Hessian at the solutions of standard optimizers (observational).}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{4.0cm}p{2.2cm}p{2.6cm}L@{}}
+\toprule
+\textbf{Network} & \textbf{Data} & \textbf{Trained with} & \textbf{Measured} \\
+\midrule
+small-LeNet (47,658 weights) & MNIST & Adam (2.4\% error) & exact Hessian spectrum \\
+small-mnistfc (50,890 weights) & MNIST & SGD + momentum (2.5\%) & exact Hessian spectrum \\
+char-LSTM (32,640 weights) & small text & Adam & exact Hessian spectrum \\
+All-CNN-BN ($\approx$1.6M weights) & CIFAR-10 & Adam (11.2\%) & diagonal Fisher (Hessian proxy) \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\paragraph{(B) Entropy-SGD vs.\ standard optimizers.}
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{2.3cm}p{2.9cm}p{3.0cm}L@{}}
+\toprule
+\textbf{Data} & \textbf{Model} & \textbf{Baseline} & \textbf{Entropy-SGD} \\
+\midrule
+MNIST & mnistfc ($2\times1024$), LeNet + BN & Adam, 100 epochs & $L{=}20$, $\eta'{=}0.1$, $\varepsilon{=}10^{-3}$, $\gamma_0{=}10^{-4}$, $\times1.001$/step \\
+CIFAR-10 (no augmentation) & All-CNN-C + BN & SGD + Nesterov, 200 epochs & $L{=}20$, $\eta'{=}0.1$, $\varepsilon{=}10^{-4}$, $\gamma_0{=}0.03$, $\times1.001$/step \\
+PTB (word LM) & 2-layer LSTM, 66M weights & SGD (Zaremba et al.) & $L{=}5$, fixed $\gamma{=}10^{-3}$, $\eta'{=}1$, momentum 0.5 \\
+\emph{War and Peace} (char LM) & 2-layer LSTM ($128$ units) & Adam, 50 epochs & Entropy-Adam, $L{=}5$, fixed $\gamma{=}0.01$, $\beta_1{=}0.5$ \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{center}\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Model} & \textbf{Metric} & \textbf{Entropy-SGD (eff.\ epochs)} & \textbf{Baseline (epochs)} \\
+\midrule
+mnistfc     & test error (\%)  & $1.37 \pm 0.03$ (120)  & $1.39 \pm 0.03$ (66) \\
+LeNet       & test error (\%)  & $0.50 \pm 0.01$ (80)   & $0.51 \pm 0.01$ (100) \\
+All-CNN-BN  & val.\ error (\%) & $7.81 \pm 0.09$ (160)  & $7.71 \pm 0.19$ (180) \\
+PTB-LSTM    & test perplexity  & $77.66 \pm 0.17$ (25)  & $78.6 \pm 0.26$ (55) \\
+char-LSTM   & test perplexity  & $1.217 \pm 0.005$ (25) & $1.226 \pm 0.01$ (40) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Control: plain SGLD, without the local-entropy coupling, is much worse (0.63\% on LeNet, 9.89\% on All-CNN-BN).
+
+\subsection{Critical reading}
+\begin{itemize}
+  \item On CNNs, Entropy-SGD \emph{matches} the baselines (slightly worse on CIFAR-10). The real wins are on LSTMs: better perplexity in about half the effective epochs.
+  \item Experiment (A) is correlational. It never compares a flat and a sharp solution on the same task, and the flatness of Entropy-SGD's own solutions is not measured.
+  \item The generalization theory rests on an assumption the paper's own data contradicts.
+\end{itemize}
+
+% ============================================================================
+\section{Part II --- Sharpness-Aware Minimization and its variants}
+\label{sec:sam}
+% ============================================================================
+\presenter{Sai Aditya}
+
+\subsection{SAM (Foret et al., ICLR 2021)}
+
+\paragraph{From a generalization bound to an objective.} A PAC-Bayes argument gives, with high probability over the training set,
+\begin{equation}
+  \Ld(w) \;\le\; \max_{\|\epsilon\|_2\le\rho} \Ls(w+\epsilon) \;+\; h\!\left(\|w\|_2^2/\rho^2\right),
+\end{equation}
+with $h$ increasing. The first term splits as
+\begin{equation}
+  \max_{\|\epsilon\|\le\rho} \Ls(w+\epsilon) = \underbrace{\Big[\max_{\|\epsilon\|\le\rho} \Ls(w+\epsilon) - \Ls(w)\Big]}_{\text{sharpness}} + \Ls(w),
+\end{equation}
+so minimizing it lowers the training loss \emph{and} the sharpness. SAM solves
+\begin{equation}
+  \min_w\; L^{\mathrm{SAM}}(w) + \lambda\|w\|_2^2, \qquad L^{\mathrm{SAM}}(w) = \max_{\|\epsilon\|_2\le\rho} \Ls(w+\epsilon).
+\end{equation}
+
+\paragraph{Solving the inner maximization.} Linearize, $L(w+\epsilon) \approx L(w) + \epsilon^\top g$. Maximizing a linear function over a ball gives
+\begin{equation}
+  \hat\epsilon(w) = \arg\max_{\|\epsilon\|_2\le\rho} \epsilon^\top g = \rho\,\frac{g}{\|g\|_2}
+\end{equation}
+(for a general $\ell_p$ ball the solution is the dual-norm direction $\rho\,\mathrm{sign}(g)|g|^{q-1}/\|g\|_q^{q-1}$, with $1/p + 1/q = 1$).
+
+\paragraph{The gradient.} Differentiating $L(w + \hat\epsilon(w))$ gives
+\begin{equation}
+  \nabla_w L^{\mathrm{SAM}}(w) \approx \nabla L(w)\big|_{w+\hat\epsilon} + \Big(\frac{d\hat\epsilon}{dw}\Big)^{\!\top} \nabla L(w)\big|_{w+\hat\epsilon}.
+\end{equation}
+The second term contains the Hessian and is dropped. So SAM uses \textbf{the gradient at the adversarial point, applied at the original point}.
+
+\begin{algorithm}[h]
+\caption{SAM (one step, any base optimizer)}
+\begin{algorithmic}[1]
+\State $g \gets \nabla L_B(w)$ \Comment{1st forward/backward}
+\State $w_{\mathrm{adv}} \gets w + \rho\, g/\|g\|$ \Comment{ascent step}
+\State $\gp \gets \nabla L_B(w_{\mathrm{adv}})$ \Comment{2nd forward/backward}
+\State $w \gets \mathrm{BaseOptimizer}(w, \gp)$ \Comment{e.g.\ $w - \eta\,\gp$}
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Link to $\lmax$.} At a minimum ($g=0$), by~\eqref{eq:taylor} the sharpness term is $\max_{\|\epsilon\|\le\rho} \frac12\epsilon^\top H\epsilon = \frac12\rho^2\lmax$.
+So the \emph{idealized} SAM objective penalizes $\lmax$. The first-order algorithm, however, only sees $g$, which vanishes at a minimum.
+This gap motivates every variant below.
+
+\paragraph{Two practical knobs.}
+\begin{itemize}
+  \item \textbf{$m$-sharpness:} split the batch into $m$ pieces and compute a separate $\hat\epsilon$ for each; small pieces often generalize better.
+  \item \textbf{ASAM} (Kwon et al., 2021): sharpness depends on weight scale, so measure the ball relative to $|w|$:
+        $\hat\epsilon = \rho\, T_w^2 g / \|T_w g\|$ with $T_w = \mathrm{diag}(|w|)$.
+\end{itemize}
+
+\subsection{SAM for language models (Bahri, Mobahi, Tay; ACL 2022)}
+
+\paragraph{Idea.} SAM had been shown on images only. Fine-tune public T5 checkpoints with and without SAM on standard NLP benchmarks.
+
+\paragraph{Efficient SAM.} The ascent gradient is computed on a micro-batch $M$ of only $\frac14$ of the batch (after Brock et al., 2021):
+\begin{equation}
+  w_{\mathrm{adv}} = w + \rho\, \frac{\nabla L_M(w)}{\|\nabla L_M(w)\|}, \qquad w \leftarrow \mathrm{opt}\big(w, \nabla L_B(w_{\mathrm{adv}})\big),
+\end{equation}
+which makes SAM only about 25\% slower than standard training.
+
+\paragraph{Setup.}
+\begin{itemize}
+  \item \textbf{Models:} T5.1.1 Small (77M), Base (250M), Large (800M), XL (3B); mT5 for multilingual QA.
+  \item \textbf{Optimizer:} Adafactor, lr $10^{-3}$, batch 128; SAM with $\rho = 0.05$ (Small) or $0.15$ (others), tuned once on SuperGLUE.
+  \item \textbf{Protocol:} one run per setting; best checkpoint chosen per task and metric.
+\end{itemize}
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{4.2cm}p{3.0cm}L@{}}
+\toprule
+\textbf{Benchmark} & \textbf{Training} & \textbf{Result (no SAM $\to$ SAM)} \\
+\midrule
+SuperGLUE (dev) & task mixture, 250k steps & improves at all sizes; Base $75.3\to78.5$, XL $87.2\to89.1$ \\
+GLUE (dev) & task mixture, 250k steps & improves at all sizes; Large $86.2\to88.3$ \\
+Closed-book QA: Natural Questions, WebQuestions, TriviaQA (test) & mixture or single task, 20k steps & improves for every task, metric and size; Base EM on NQ $18.1\to20.6$ \\
+TyDiQA-GoldP (mT5, 9 languages) & 20k steps, $\rho \in \{0.02, 0.05\}$ & modest: $+0.3$ to $+0.9$ average F1 \\
+Low data: train sets subsampled to 2--80\% & SuperGLUE, CBQA & gains persist; 5\% SuperGLUE Base $52.9\to56.7$; largest relative gains near 20\% \\
+Ablations (SuperGLUE Base) & $\rho$, micro-batch $a$, $m$ & every $\rho$ beats no SAM, $\rho{=}0.15$ best; $a = 32$ of 128 suffices; $m>1$ does not help \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\paragraph{Critical reading.} Strong evidence that SAM helps NLP fine-tuning, especially with little data. But \textbf{flatness is never measured},
+so the paper shows SAM \emph{helps}, not that it helps \emph{because} the solution is flatter. Results are single-seed, and a few tasks get worse
+(e.g.\ GLUE RTE for Small $74.0\to70.4$).
+
+\subsection{Why plain SAM is not enough: the surrogate gap (GSAM)}
+
+Zhuang et al.\ (ICLR 2022) point out that a low perturbed loss $f_p(w) = \max_{\|\delta\|\le\rho} f(w+\delta)$ can occur at a sharp minimum if that minimum is deep enough.
+So for two minima, $f_p(w_1) \le f_p(w_2)$ does \emph{not} imply $\lmax(w_1) \le \lmax(w_2)$. A quantity that does track sharpness is the \textbf{surrogate gap}
+\begin{equation}
+  h(w) = f_p(w) - f(w) \approx f(w_{\mathrm{adv}}) - f(w) \;\ge\; 0, \qquad h(w^*) \approx \tfrac12\rho^2\lmax(w^*) \text{ at a minimum } w^*.
+\end{equation}
+
+\paragraph{GSAM.} Minimize $f_p$ and $h$ together, without letting the second objective hurt the first. Decompose the clean gradient $g$ relative to the SAM gradient $\gp$:
+\begin{equation}
+  g = g_\parallel + g_\perp, \qquad g_\parallel = \frac{\langle g, \gp\rangle}{\|\gp\|^2}\,\gp .
+\end{equation}
+Since $\nabla h = \gp - g$, its component orthogonal to $\gp$ is $-g_\perp$. Moving along $+g_\perp$ therefore lowers $h$ and leaves $f_p$ unchanged to first order:
+\begin{equation}
+  w \leftarrow w - \eta\,(\gp - \alpha\, g_\perp).
+\end{equation}
+GSAM also ties the radius to the learning-rate schedule: $\rho_t = \rho_{\min} + (\rho_{\max}-\rho_{\min})\frac{\eta_t - \eta_{\min}}{\eta_{\max}-\eta_{\min}}$.
+
+\subsection{WSAM: sharpness as a weighted regularizer (Yue et al., KDD 2023)}
+
+Make the trade-off between loss and sharpness explicit:
+\begin{equation}
+  L_{\mathrm{WSAM}}(w) = L(w) + \frac{\gamma}{1-\gamma}\big(L_{\mathrm{SAM}}(w) - L(w)\big)
+                      = \frac{1-2\gamma}{1-\gamma}L(w) + \frac{\gamma}{1-\gamma}L_{\mathrm{SAM}}(w), \qquad \gamma\in[0,1).
+\end{equation}
+$\gamma = 0$ is plain training, $\gamma = \frac12$ is SAM, and $\gamma > \frac12$ weights sharpness more than SAM does. Like decoupled weight decay in AdamW,
+the base optimizer sees only the clean gradient $\tilde g$, and the sharpness gradient is applied separately:
+\begin{equation}
+  w \leftarrow \mathrm{BaseStep}(w, \tilde g) - \eta\,\frac{\gamma}{1-\gamma}\,(\gp - \tilde g).
+\end{equation}
+
+\subsection{Eigen-SAM: why SAM only \emph{implicitly} controls $\lmax$ (Luo et al., 2025)}
+
+\paragraph{Continuous-time view.} SGD is well approximated by the SDE $dW_t = -\nabla f(W_t)\,dt + \sqrt{\eta}\,\Sigma^{1/2} dB_t$.
+Expanding SAM's perturbed gradient to \emph{third} order gives an SDE whose drift is the gradient of
+\begin{equation}
+  \tilde f_{\mathrm{SAM}}(w) = f(w) + \rho\, \E\|\nabla f_\gamma(w)\| + \frac{\rho^2}{2}\, \E\!\left[\frac{\nabla f_\gamma^\top\, \nabla^2 f_\gamma(w)\, \nabla f_\gamma}{\|\nabla f_\gamma\|^2}\right],
+\end{equation}
+where $f_\gamma$ is the mini-batch loss. The last term is the curvature \emph{along the gradient direction}. If the perturbation is aligned with the top eigenvector $v_1$, this term becomes $\frac{\rho^2}{2}\lmax$,
+and SAM implicitly minimizes $\lmax$. Measured in practice, this alignment is weak, so the implicit regularization is weak.
+A PAC-Bayes bound in the same paper bounds the test loss by the training loss plus a term proportional to $\lmax$ (plus higher-order and complexity terms).
+
+\paragraph{Eigen-SAM.} Every $p$ steps, estimate $v$ by $q$ power iterations. Then tilt the perturbation towards $v$:
+\begin{equation}
+  \epsilon = \rho\left(\frac{g}{\|g\|} + \alpha\,\mathrm{sign}\langle g, v\rangle\, v_\perp\right), \qquad v_\perp = v - \Big\langle v, \tfrac{g}{\|g\|}\Big\rangle \tfrac{g}{\|g\|},
+\end{equation}
+and update with $\nabla f(w + \epsilon)$. Default values are $\alpha = 0.2$, $p = 100$, $q = 5$; $\alpha = 0$ gives SAM.
+
+\subsection{X-SAM: correct the update, not the perturbation (Duan et al., 2026)}
+
+\paragraph{Diagnostic.} The authors train a 6-layer CNN on CIFAR-10 with SAM and record the angle between SAM's update and $v_1$.
+In about 45\% of steps the angle is $80^\circ$--$100^\circ$, i.e.\ nearly orthogonal.
+
+\paragraph{Why the angle matters.} The quadratic change of the loss after a step $\Delta w = -\eta g$ has a contribution from the top direction of
+\begin{equation}
+  \lambda_1\, (\Delta w^\top v_1)^2 = \lambda_1\, \eta^2 \langle g, v_1\rangle^2 .
+\end{equation}
+\begin{itemize}
+  \item If $g \perp v_1$, the step barely interacts with the sharpest direction, so $\lmax$ is hardly reduced. Their Theorem 5.3 makes this precise:
+        $|\Delta\lambda_1| \le \eta\,\varepsilon\,\|g\| + O(\eta^2\|g\|^2/\text{gap})$, where $\varepsilon$ bounds the part of $\nabla\lambda_1$ orthogonal to $v_1$.
+  \item If $g$ is partly aligned with $v_1$ (angles of $50^\circ$--$80^\circ$), the step moves along the sharpest direction, and the authors argue that this keeps the weights in sharp regions.
+\end{itemize}
+
+\paragraph{X-SAM update.} Normalize the SAM gradient and remove a fraction $\alpha$ of its component along $v$:
+\begin{equation}
+  \hat h = \frac{\gp}{\|\gp\|}, \qquad
+  g_{\mathrm{X\text{-}SAM}} = \hat h - \alpha\,\mathrm{sign}\langle \gp, v\rangle\, \hat h_\parallel
+  \;=\; (I - \alpha\, v v^\top)\,\hat h \quad (\text{projector form}),
+\end{equation}
+then $w \leftarrow w - \eta\, g_{\mathrm{X\text{-}SAM}}$. The eigenvector $v$ is re-estimated every $p$ steps, as in Eigen-SAM.
+
+\paragraph{Theory.} With $P = I - \alpha vv^\top$ and $\alpha\in[0,2]$, $\|P\|_{\mathrm{op}}\le 1$. X-SAM converges at the $O(1/\sqrt T)$ rate of SGD
+for smooth non-convex losses, up to a term from the perturbation that grows with $\rho$ (Theorem 5.1). A matrix-perturbation bound shows that the corrected step
+can lower $\lmax$ (Theorem 5.2).
+
+\paragraph{Our implementation note.} Since $\hat h_\parallel = \langle\hat h, v\rangle v$ does not depend on the sign of $v$, the sign factor in their Algorithm 2 can
+\emph{add} to the sharp component for some sign combinations. Our code uses the projector form $(I - \alpha vv^\top)\hat h$, which always shrinks it.
+
+\paragraph{Setup.} CIFAR-10, CIFAR-100 and Fashion-MNIST with standard augmentation. Models: ResNet-18, ResNet-50, WideResNet-28-10 and AlexNet.
+Optimizer: SGD with lr 0.1 (cosine schedule), momentum 0.9, batch 256, 200 epochs. $\rho = 0.05$ (0.1 for CIFAR-100) and $\alpha = 0.2$. Three seeds per setting.
+
+\begin{center}\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+\textbf{Avg.\ top-1 accuracy (\%)} & \textbf{SAM} & \textbf{WSAM} & \textbf{GSAM} & \textbf{Eigen-SAM} & \textbf{X-SAM} \\
+\midrule
+CIFAR-10 (4 models)  & 92.41 & 92.25 & 92.31 & 92.57 & \textbf{93.68} \\
+CIFAR-100 (4 models) & 71.06 & 71.95 & 70.86 & 71.08 & \textbf{73.81} \\
+Fashion-MNIST        & 94.90 & 95.43$^\ast$ & 95.16 & 95.24$^\ast$ & 95.24 \\
+\bottomrule
+\end{tabular}\\[2pt]
+{\footnotesize $^\ast$Did not converge on AlexNet, so the average covers 3 models.}
+\end{center}
+
+They also measure flatness directly. For ResNet-18, X-SAM's $\lmax$ falls faster and oscillates less during training. Its Hessian spectrum has a smaller $\lmax$, a smaller trace, and more mass near zero than SAM's.
+
+\paragraph{Critical reading.}
+\begin{itemize}
+  \item This is the one paper in Part II whose method targets $\lmax$, measures $\lmax$, \emph{and} reports accuracy.
+  \item Much of the average gain comes from AlexNet ($+8.6\pp$ over SAM on CIFAR-100). On the ResNets the gains are $0.1$--$2\pp$, often within one standard deviation.
+  \item Some numbers are inconsistent. The WSAM Fashion-MNIST average (95.43) does not match its row (95.10), and the headline gains differ between the abstract and Section 6.2.
+  \item Vision only. The authors list transformers as future work.
+\end{itemize}
+
+\subsection{The SAM family at a glance}
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{2.2cm}p{4.6cm}Lp{2.2cm}@{}}
+\toprule
+\textbf{Method} & \textbf{Perturbation} & \textbf{Update direction} & \textbf{Targets} \\
+\midrule
+SAM       & $\rho\, g/\|g\|$ & $\gp$ & worst-case loss \\
+ASAM      & $\rho\, T_w^2 g/\|T_w g\|$ & $\gp$ & scale-invariant sharpness \\
+GSAM      & $\rho_t\, g/\|g\|$ & $\gp - \alpha g_\perp$ & surrogate gap $h \approx \frac12\rho^2\lmax$ \\
+WSAM      & $\rho\, g/\|g\|$ & $\tilde g$, then a separate $\frac{\gamma}{1-\gamma}(\gp - \tilde g)$ step & weighted sharpness \\
+Eigen-SAM & $\rho\,(g/\|g\| + \alpha\,\mathrm{sign}\langle g,v\rangle v_\perp)$ & $\gp$ & $\lmax$, implicitly \\
+X-SAM     & $\rho\, g/\|g\|$ & $(I - \alpha vv^\top)\,\gp/\|\gp\|$ & $\lmax$, explicitly \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+% ============================================================================
+\section{Part III --- Is $\lmax$ really linked to generalization?}
+\label{sec:kaur}
+% ============================================================================
+\presenter{Sai Vinay}
+
+Kaur, Cohen, Lipton. \emph{On the Maximum Hessian Eigenvalue and Generalization}. arXiv:2206.10654 (v3, 2023).
+
+\subsection{$\lmax$ as a sharpness measure}
+
+$\lmax = \max_{\|u\|=1} u^\top H u$ is the curvature in the worst direction. It connects to the two most common definitions of sharpness:
+\begin{itemize}
+  \item Keskar et al.'s sharpness at a minimum is a scaled $\lmax$ if the loss is close to its quadratic approximation.
+  \item SAM's idealized objective is bounded using $\lmax$. By~\eqref{eq:taylor} and $\epsilon^\top H\epsilon \le \|\epsilon\|^2\lmax$,
+  \begin{equation}
+    \max_{\|\epsilon\|\le\rho} L(w+\epsilon) \;\lesssim\; L(w) + \rho\,\|\nabla L(w)\| + \tfrac12\rho^2\,\lmax .
+  \end{equation}
+\end{itemize}
+
+\subsection{Earlier doubt: sharpness is not invariant to reparameterization}
+
+For a ReLU network, $\mathrm{relu}(cz) = c\,\mathrm{relu}(z)$ for $c>0$. So scaling one layer by $c$ and the next by $1/c$ leaves the function unchanged:
+$L(c\theta_1, \theta_2/c) = L(\theta_1,\theta_2)$. Differentiating this identity twice with respect to the second layer shows that the Hessian block of the second layer at the
+rescaled point is $c^2$ times the original. As $c\to\infty$, $\lmax\to\infty$ while the predictions stay identical (Dinh et al., 2017).
+\textbf{Objection:} SGD never produces such rescaled weights. Kaur et al.\ ask whether $\lmax$ fails even for solutions SGD \emph{does} reach.
+
+\subsection{What controls $\lmax$ in practice}
+
+\paragraph{The edge of stability.} Gradient descent on a quadratic with curvature $\lambda$ updates the error as $\delta_{t+1} = (1-\eta\lambda)\,\delta_t$.
+This is stable only if $|1-\eta\lambda| < 1$, i.e.\ $\lambda < 2/\eta$. Full-batch GD on neural networks first sharpens until $\lmax \approx 2/\eta$
+and then hovers there (Cohen et al., 2021). So for large batches \textbf{the learning rate alone sets $\lmax$}, whatever the effect on test accuracy.
+
+\paragraph{The linear scaling rule.} In the small-batch regime, SGD's behaviour (and its generalization) depends mostly on the ratio of batch size to learning rate.
+Doubling both leaves accuracy unchanged, but the larger learning rate still pushes $\lmax$ down.
+
+\paragraph{Other levers.} SAM's $\rho$, dropout noise, and batch normalization. For BN networks at small $\eta$, $\lmax$ is measured as the maximum over 8 points
+between two successive iterates, because it varies a lot along the path.
+
+\subsection{The logic of the paper}
+
+If small $\lmax$ \emph{caused} good generalization, two things should hold:
+\begin{enumerate}
+  \item interventions that lower $\lmax$ should improve test accuracy;
+  \item solutions with similar $\lmax$ should have similar test accuracy.
+\end{enumerate}
+The paper gives five counterexamples from ordinary training.
+
+\subsection{Experimental setup and results}
+
+\paragraph{Protocol.} Minibatch SGD with a constant learning rate and no schedule. Training stops at 99\% training accuracy. $\lmax$ is computed on a subset of the training set,
+with dropout off. The same initialization seeds are used across settings, and results are averaged over 3--5 seeds.
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{2.8cm}p{3.0cm}p{3.4cm}L@{}}
+\toprule
+\textbf{Intervention} & \textbf{Data / model} & \textbf{Varied} & \textbf{Finding} \\
+\midrule
+1.\ Larger learning rate & CIFAR-10, VGG-11 without BN & lr $10^{-4}$--$10^{-1}$; batch 100 to 50,000 (full) &
+Larger lr always lowers $\lmax$ (for large batches $\lmax \approx 2/\eta$). Accuracy improves only for small batches. Runs with equal $\lmax$ can differ a lot in accuracy \\
+\addlinespace
+2.\ Linear scaling & CIFAR-10, VGG-11 (and Fixup ResNet-32) & batch 100/200/500 at a fixed batch/lr ratio &
+Same accuracy, different $\lmax$ \\
+\addlinespace
+3.\ SAM & CIFAR-10, VGG-11, Fixup ResNet-32 & $\rho\in[0,0.1]$; small vs.\ large batch &
+Higher $\rho$ always lowers $\lmax$, but accuracy rises only for small batches. With BN, SAM helps at both batch sizes \\
+\addlinespace
+4.\ Dropout & Fashion-MNIST, 2-hidden-layer MLP & $p \in [0, 0.7]$ &
+Higher $p$ always lowers $\lmax$. Accuracy improves up to $p \approx 0.2$, then degrades \\
+\addlinespace
+5.\ Batch norm & CIFAR-10, VGG-11 with/without BN & lr sweep, both batch regimes &
+$\lmax$ is about the same at a fixed lr, yet accuracy differs \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Critical reading}
+\begin{itemize}
+  \item Conclusion: $\lmax$ is not a reliable predictor of generalization, even for realistic SGD solutions.
+  \item Not a claim that SAM or large learning rates are useless. Both still help with small batches. The claim is that $\lmax$ does not \emph{explain} why.
+  \item Scope: one measure ($\lmax$; the trace is untested), small vision models, constant learning rates.
+\end{itemize}
+
+% ============================================================================
+\section{Synthesis}
+\label{sec:synthesis}
+% ============================================================================
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{3.8cm}LL@{}}
+\toprule
+\textbf{Question} & \textbf{Evidence for (H)} & \textbf{Evidence against / limits} \\
+\midrule
+Are good solutions flat? & Entropy-SGD: $\approx$95\% near-zero eigenvalues at SGD/Adam solutions & Correlational; no flat-vs-sharp comparison \\
+\addlinespace
+Does seeking flatness improve accuracy? & Entropy-SGD (LSTMs), SAM on T5 (GLUE, SuperGLUE, QA), X-SAM (CIFAR) & Entropy-SGD only matches baselines on CNNs; Bahri et al.\ never verify that flatness changed \\
+\addlinespace
+Does the flatness measure track accuracy? & X-SAM: lower $\lmax$ goes with higher accuracy across SAM variants & Kaur et al.: five interventions where $\lmax$ and accuracy move independently \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\begin{enumerate}
+  \item The papers make two different claims. \emph{Flat-seeking optimizers improve accuracy} is well supported.
+        \emph{Flatness, measured as $\lmax$, is the reason} is contested.
+  \item ``Flatness'' is several different quantities (local entropy, worst-case loss, $\lmax$, trace), and they can disagree.
+  \item \textbf{None of these papers measures flatness for language models.} The NLP paper reports only accuracy, and the papers that measure $\lmax$ use small vision models.
+\end{enumerate}
+
+% ============================================================================
+\section{Our contribution (planned)}
+\label{sec:contribution}
+% ============================================================================
+
+\subsection{Goal}
+
+Close the gap in point 3 above. We fine-tune a pre-trained transformer on GLUE with every optimizer covered in this talk, under one fair protocol.
+For each run we measure \emph{both} generalization and curvature. This lets us ask Kaur et al.'s question in NLP.
+
+\subsection{Research questions}
+
+\begin{enumerate}[label=\textbf{RQ\arabic*.}, leftmargin=*]
+  \item \textbf{Accuracy.} At an equal compute budget, do the SAM variants and Entropy-SGD beat AdamW when fine-tuning on small GLUE tasks?
+        Do the gains grow when training data is scarce, as Bahri et al.\ found for T5?
+  \item \textbf{Flatness.} Do these optimizers actually reach lower $\lmax$ and $\tr(H)$ on a transformer? Bahri et al.\ never checked.
+  \item \textbf{Does flatness predict generalization in NLP?} Across all runs, how well does $\lmax$ (or the trace) rank the dev scores?
+        Does Kaur et al.'s SAM result (benefit at small batch, none at large batch) also hold for transformers?
+  \item \textbf{The X-SAM diagnostic.} Is the update also nearly orthogonal to the top Hessian eigenvector in transformers, as X-SAM found for CNNs?
+\end{enumerate}
+
+None of the papers we present runs Entropy-SGD, Eigen-SAM or X-SAM on transformers. RQ2--RQ4 have not been studied for NLP in any of them.
+
+\subsection{Experimental design}
+
+\begin{center}\small
+\begin{tabularx}{\textwidth}{@{}p{3.2cm}L@{}}
+\toprule
+\textbf{Model} & BERT-base (uncased), fine-tuned \\
+\textbf{Tasks} & RTE (2.5k train), MRPC (3.7k), CoLA (8.5k), and SST-2 subsampled to 5\% and 20\%: low-data settings where Bahri et al.\ saw the largest gains \\
+\textbf{Optimizers} & AdamW (baseline); SAM, ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (all with AdamW as the base optimizer); Entropy-SGD in its Entropy-Adam form \\
+\textbf{Fair comparison} & Equal number of gradient evaluations per run (SAM-type methods cost $\approx 2\times$ per step, Entropy-SGD $L\times$), also reported at equal steps; the same size of hyperparameter grid for each method; 5 seeds; mean $\pm$ std \\
+\textbf{Generalization} & Standard dev metric per task (accuracy, F1, Matthews correlation) and the train--dev gap \\
+\textbf{Curvature} & At the final checkpoint, on a fixed 1k-example training subset with dropout off: $\lmax$ by power iteration, $\tr(H)$ by Hutchinson, and SAM sharpness at fixed $\rho$. During training: $\lmax$ and the angle between the update and $v_1$ every $p$ steps \\
+\textbf{Kaur-style test} & SAM $\rho$ sweep at a small and a large batch size; scatter $\lmax$ against dev score over all runs and report rank correlation \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\paragraph{Note on Adam.} AdamW rescales every coordinate, so the curvature it ``sees'' is the preconditioned Hessian, not $H$.
+Where feasible we also report $\lmax$ of the preconditioned Hessian.
+
+\subsection{Status}
+
+\begin{itemize}
+  \item \textbf{Done:} PyTorch implementations of SAM/ASAM, GSAM, WSAM, Eigen-SAM, X-SAM and Entropy-SGD/Entropy-Adam behind one \texttt{optimizer.step(closure)} interface,
+        with power iteration for $\lmax$; curvature tools ($\lmax$, Hessian trace) validated against the exact Hessian; GLUE fine-tuning scripts.
+  \item \textbf{To do:} a single runner with compute matching and seeds; final-checkpoint $\lmax$, trace and angle measurements; task-specific metrics; the runs and analysis.
+\end{itemize}
+
+\subsection{What each outcome would mean}
+
+\begin{itemize}
+  \item \textbf{Flatter and better:} supports (H) for NLP fine-tuning and gives Bahri et al.'s gains a geometric explanation.
+  \item \textbf{Better but not flatter, or $\lmax$ uncorrelated with dev score:} extends Kaur et al.'s conclusion to transformers. The gains then need another explanation.
+  \item \textbf{Flatter but not better:} flatness-seeking alone does not transfer to fine-tuning; that is itself a useful negative result.
+\end{itemize}
+
+% ============================================================================
+\appendix
+\section{Datasets, tasks and metrics}
+\label{app:data}
+% ============================================================================
+
+\begin{longtable}{@{}p{2.8cm}p{6.4cm}p{3.0cm}p{2.0cm}@{}}
+\toprule
+\textbf{Dataset} & \textbf{Task} & \textbf{Size} & \textbf{Used in} \\
+\midrule
+\endhead
+MNIST & handwritten digits, $28{\times}28$ grayscale, 10 classes & 60k / 10k & I \\
+Fashion-MNIST & same format, 10 clothing categories & 60k / 10k & II, III \\
+CIFAR-10 & $32{\times}32$ colour photos, 10 classes & 50k / 10k & I, II, III \\
+CIFAR-100 & same images, 100 classes & 50k / 10k & II \\
+Penn Treebank & word-level language modelling & $\approx$930k / 74k / 82k words & I \\
+\emph{War and Peace} & character-level language modelling & $\approx$3M characters & I \\
+GLUE & 8 sentence(-pair) tasks: CoLA (grammaticality), SST-2 (sentiment), MRPC, QQP (paraphrase), STS-B (similarity), MNLI, QNLI, RTE (inference) & 2.5k--393k per task & II, ours \\
+SuperGLUE & 8 harder tasks: BoolQ (yes/no QA), CB (entailment), COPA (causal reasoning), MultiRC, ReCoRD (reading comprehension), RTE, WiC (word sense), WSC (coreference) & 250--100k per task & II \\
+Closed-book QA & Natural Questions, WebQuestions, TriviaQA: answer with no supporting passage & & II \\
+TyDiQA-GoldP & extractive QA given the passage, 9 typologically diverse languages & & II \\
+\bottomrule
+\end{longtable}
+
+\paragraph{Metrics.} \textbf{Accuracy / error rate.} \textbf{Perplexity} $= \exp(\text{mean negative log-likelihood per token})$; lower is better.
+\textbf{Exact match (EM)} credits only identical answers, while \textbf{F1} credits overlapping tokens. \textbf{Matthews correlation} (CoLA) handles class imbalance;
+\textbf{Pearson/Spearman} correlation is used for STS-B. GLUE and SuperGLUE scores are averages over tasks.
+
+% ============================================================================
+\section*{References}
+\addcontentsline{toc}{section}{References}
+% ============================================================================
+\begin{enumerate}[label={[\arabic*]},leftmargin=*,itemsep=1pt]\small
+  \item P.~Chaudhari et al. Entropy-SGD: Biasing gradient descent into wide valleys. \emph{ICLR}, 2017.
+  \item P.~Foret, A.~Kleiner, H.~Mobahi, B.~Neyshabur. Sharpness-aware minimization for efficiently improving generalization. \emph{ICLR}, 2021.
+  \item D.~Bahri, H.~Mobahi, Y.~Tay. Sharpness-aware minimization improves language model generalization. \emph{ACL}, 2022. arXiv:2110.08529.
+  \item J.~Kwon, J.~Kim, H.~Park, I.~K.~Choi. ASAM: Adaptive sharpness-aware minimization for scale-invariant learning of deep neural networks. \emph{ICML}, 2021.
+  \item J.~Zhuang et al. Surrogate gap minimization improves sharpness-aware training. \emph{ICLR}, 2022.
+  \item Y.~Yue, J.~Jiang, Z.~Ye et al. Sharpness-aware minimization revisited: Weighted sharpness as a regularization term. \emph{KDD}, 2023.
+  \item H.~Luo et al. Explicit eigenvalue regularization improves sharpness-aware minimization. arXiv:2501.12666, 2025.
+  \item H.~Duan, Y.~Chen, L.~Guan. X-SAM: Boosting sharpness-aware minimization with dominant-eigenvector gradient correction. arXiv:2601.10251, 2026.
+  \item S.~Kaur, J.~Cohen, Z.~C.~Lipton. On the maximum Hessian eigenvalue and generalization. arXiv:2206.10654, 2023.
+  \item L.~Dinh, R.~Pascanu, S.~Bengio, Y.~Bengio. Sharp minima can generalize for deep nets. \emph{ICML}, 2017.
+  \item J.~Cohen, S.~Kaur, Y.~Li, J.~Z.~Kolter, A.~Talwalkar. Gradient descent on neural networks typically occurs at the edge of stability. \emph{ICLR}, 2021.
+  \item N.~S.~Keskar et al. On large-batch training for deep learning: Generalization gap and sharp minima. \emph{ICLR}, 2017.
+  \item M.~Hardt, B.~Recht, Y.~Singer. Train faster, generalize better: Stability of stochastic gradient descent. \emph{ICML}, 2016.
+  \item M.~Welling, Y.~W.~Teh. Bayesian learning via stochastic gradient Langevin dynamics. \emph{ICML}, 2011.
+  \item S.~Hochreiter, J.~Schmidhuber. Flat minima. \emph{Neural Computation}, 1997.
+  \item B.~A.~Pearlmutter. Fast exact multiplication by the Hessian. \emph{Neural Computation}, 1994.
+\end{enumerate}
+
+\end{document}
