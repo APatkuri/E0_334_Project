@@ -33,6 +33,7 @@ Image tables of the SAM-variant papers, SAM/train_image.py, any order (cheapest 
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -432,10 +433,13 @@ def main():
     p.add_argument("phase", choices=PHASES)
     p.add_argument("--gpus", nargs="+", type=int, default=[0])
     p.add_argument("--per_gpu", type=int, default=1, help="jobs per GPU at once (a BERT job needs about 10 GB)")
+    p.add_argument("--match", help="only jobs whose name matches this regex, e.g. 'datasetcifar10_.*_s0$'")
     p.add_argument("--dry_run", action="store_true")
     args = p.parse_args()
 
     jobs = PHASES[args.phase]()
+    if args.match:
+        jobs = [j for j in jobs if re.search(args.match, j[0])]
     if args.dry_run:
         for job in jobs:
             print(job[0])
