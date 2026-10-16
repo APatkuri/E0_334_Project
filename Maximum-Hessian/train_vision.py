@@ -18,13 +18,17 @@ import argparse
 import json
 import math
 import os
+import sys
 import time
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 
+import tracking
 from hessian_tools import hessian_mode, hessian_trace, lmax_between, top_eigenvalue
 
 VGG11 = [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"]
@@ -146,6 +150,7 @@ def accuracy(model, x, y, chunk, device):
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)
+    tracking.init(args)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     x_train, y_train, x_test, y_test = load_data(args.dataset, args.data_dir)
     n = len(x_train)
@@ -175,10 +180,12 @@ def main():
             if args.lmax_every and steps % args.lmax_every == 0:
                 with hessian_mode(model):
                     lmax_curve.append((steps, top_eigenvalue(params, loss_fn, batches, iters=args.lmax_iters)[0]))
+                tracking.log(dict(steps=steps, lmax=lmax_curve[-1][1]))
         if diverged:
             break
         train_acc = accuracy(model, x_train, y_train, args.chunk, device)
         print(f"epoch {epoch} steps {steps} loss {loss:.4f} train acc {train_acc:.4f}", flush=True)
+        tracking.log(dict(epoch=epoch, steps=steps, loss=loss, train_acc=train_acc))
         if train_acc >= args.target_acc:
             break
 
@@ -206,6 +213,7 @@ def main():
     print(json.dumps({k: result[k] for k in ("train_acc", "test_acc", "lmax", "two_over_lr") if k in result}))
     with open(args.out, "a") as f:
         f.write(json.dumps(result) + "\n")
+    tracking.finish(result)
 
 
 if __name__ == "__main__":

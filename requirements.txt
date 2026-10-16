@@ -5,3 +5,4 @@ datasets>=2.18
 numpy
 matplotlib
 scipy
+wandb

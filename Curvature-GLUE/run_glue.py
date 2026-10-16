@@ -31,6 +31,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for sub in ("SAM", "Entropy-SGD", "Maximum-Hessian"):
     sys.path.insert(0, os.path.join(ROOT, sub))
+sys.path.append(ROOT)
 
 import numpy as np
 import torch
@@ -39,6 +40,7 @@ from torch.utils.data import DataLoader
 from transformers import (AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding,
                           get_constant_schedule, get_linear_schedule_with_warmup)
 
+import tracking
 from entropy_optim import EntropySGD
 from hessian_tools import hessian_mode, hessian_trace, top_eigenvalue
 from hessian_tools.spectrum import dot
@@ -276,6 +278,7 @@ def abs_cos(a, b):
 def main():
     args = parse_args()
     set_seed(args.seed)
+    tracking.init(args)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     start_time = time.time()
     primary = TASKS[args.task][3]
@@ -328,6 +331,7 @@ def main():
             dw = [p.detach() - b for p, b in zip(params, before)]
             track.append(dict(step=step, lmax=lam, cos_grad_v=abs_cos(g, v), cos_update_v=abs_cos(dw, v)))
             print(f"step {step}: lambda_max {lam:.2f} |cos(update, v1)| {track[-1]['cos_update_v']:.4f}", flush=True)
+            tracking.log(track[-1])
             del v, g, before, dw
         if not math.isfinite(loss):
             diverged = True
@@ -335,13 +339,16 @@ def main():
             break
         if (step + 1) % log_every == 0:
             print(f"step {step + 1}/{updates} loss {loss:.4f}", flush=True)
+            tracking.log(dict(step=step + 1, loss=loss, lr=scheduler.get_last_lr()[0]))
         if step + 1 in eval_at:
             dev = evaluate(model, dev_loader, device)
             dev_curve.append(dict(step=step + 1, **dev))
             print(f"step {step + 1}: dev {primary} {dev[primary]:.4f}", flush=True)
+            tracking.log(dict(step=step + 1, dev=dev))
         if args.target_train_acc > 0 and (step + 1) % epoch_updates == 0:
             train_acc = evaluate(model, train_eval_loader, device)["acc"]
             print(f"step {step + 1}: train acc {train_acc:.4f}", flush=True)
+            tracking.log(dict(step=step + 1, train_acc=train_acc))
             if train_acc >= args.target_train_acc:
                 break
     done = step + 1
@@ -374,6 +381,7 @@ def main():
     with open(args.out + ".tmp", "w") as f:
         json.dump(result, f, indent=1)
     os.replace(args.out + ".tmp", args.out)  # a JSON file exists only for finished runs
+    tracking.finish(result)
 
 
 if __name__ == "__main__":

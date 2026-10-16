@@ -17,12 +17,16 @@ import argparse
 import json
 import math
 import os
+import sys
 import time
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import tracking
 from entropy_optim import EntropySGD
 
 # Paper settings per (task, optimizer). "ours" marks what the paper leaves open.
@@ -150,6 +154,7 @@ def build_optimizer(args, model):
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)
+    tracking.init(args)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     (tr, va, te), vocab = load_corpus(args.task, args.data_dir)
     train = batchify(tr, args.batch_size, device)
@@ -206,12 +211,14 @@ def main():
             row["grad_ratio"] = opt.grad_ratio
         curve.append(row)
         print(json.dumps(row), flush=True)
+        tracking.log(row)
 
     result = dict(vars(args), vocab=vocab, curve=curve, diverged=diverged, seconds=round(time.time() - start, 1))
     if curve:
         result.update({k: curve[-1][k] for k in ("val_loss", "test_loss", "val_ppl", "test_ppl")})
     with open(args.out, "w") as f:
         json.dump(result, f)
+    tracking.finish(result)
 
 
 if __name__ == "__main__":

@@ -411,7 +411,8 @@ def run_queue(jobs, log_dir, gpus, per_gpu):
                     job = todo.pop(0)
                     os.makedirs(os.path.dirname(out(job)), exist_ok=True)
                     cmd = [sys.executable, "-u", job[1], *job[2], "--out", out(job)]
-                    env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(slot[0]))
+                    env = dict(os.environ, CUDA_VISIBLE_DEVICES=str(slot[0]),  # W&B names: see tracking.py
+                               WANDB_NAME=job[0], WANDB_RUN_GROUP=os.path.basename(log_dir))
                     log = open(os.path.join(log_dir, job[0] + ".log"), "w")
                     slots[slot] = (subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
                                                     cwd=os.path.dirname(job[1])), job[0], time.time())

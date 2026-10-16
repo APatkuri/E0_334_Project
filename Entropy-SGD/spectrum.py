@@ -28,9 +28,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.func import functional_call, grad, vjp, vmap
-from torchvision import datasets
-
 import train_image
+import tracking  # importable once train_image has put the repo root on the path
 
 TARGET_ERR = {"small_lenet": 0.024, "small_mnistfc": 0.025, "allcnn_fisher": 0.112}  # Sec. 5.1 (i), (ii), (iv)
 
@@ -193,6 +192,7 @@ def summary(eig):
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)
+    tracking.init(args)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     start = time.time()
 
@@ -223,6 +223,8 @@ def main():
     print(json.dumps(result))
     with open(args.out, "w") as f:
         json.dump(result, f)
+    tracking.histogram("eigenvalues", eig)
+    tracking.finish(result)
 
 
 if __name__ == "__main__":

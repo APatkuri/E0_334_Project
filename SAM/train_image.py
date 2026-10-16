@@ -24,12 +24,14 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "Maximum-Hessian"))
+sys.path.append(ROOT)
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets
 
+import tracking
 from hessian_tools import hessian_mode, top_eigenvalue
 from image_models import MODELS, build_model
 from sam_optim import GSAM, SAM, WSAM, EigenSAM, XSAM
@@ -174,6 +176,7 @@ def evaluate(model, x, y, prep, bs=500):
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)
+    tracking.init(args)
     torch.backends.cuda.matmul.allow_tf32 = True  # convolutions already use TF32 by default
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -247,6 +250,7 @@ def main():
                 curve.append(row)
                 running, seen = 0.0, 0
                 print(json.dumps(row), flush=True)
+                tracking.log(row)
 
     result = dict(vars(args), num_classes=num_classes, steps_done=step, curve=curve, diverged=diverged)
     if curve and not diverged:
@@ -264,6 +268,7 @@ def main():
     print(json.dumps({k: result.get(k) for k in ("test_acc", "best_test_acc", "train_loss", "lmax", "minutes")}))
     with open(args.out, "w") as f:
         json.dump(result, f)
+    tracking.finish(result)
 
 
 if __name__ == "__main__":

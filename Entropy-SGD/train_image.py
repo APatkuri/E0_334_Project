@@ -17,13 +17,17 @@ import argparse
 import json
 import math
 import os
+import sys
 import time
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import datasets
 
+import tracking
 from entropy_optim import EntropySGD
 
 # Paper settings per (model, optimizer). "ours" marks what the paper leaves open.
@@ -165,6 +169,7 @@ def error(model, x, y, bs=1000):
 def main():
     args = parse_args()
     torch.manual_seed(args.seed)
+    tracking.init(args)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     x_tr, y_tr, x_te, y_te = load_data(args.model, args.data_dir, device)
     model = build_model(args.model, args.dropout).to(device)
@@ -201,6 +206,7 @@ def main():
             row.update(gamma=opt.gamma, grad_ratio=opt.grad_ratio)
         curve.append(row)
         print(json.dumps(row), flush=True)
+        tracking.log(row)
 
     result = dict(vars(args), curve=curve, diverged=diverged, seconds=round(time.time() - start, 1))
     if curve:
@@ -209,6 +215,7 @@ def main():
                       best_effective_epochs=best["effective_epochs"])
     with open(args.out, "w") as f:
         json.dump(result, f)
+    tracking.finish(result)
 
 
 if __name__ == "__main__":

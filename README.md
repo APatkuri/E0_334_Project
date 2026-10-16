@@ -70,4 +70,13 @@ python sweep.py vision-3.4 --gpus 5                                             
 python sweep.py --help                                                          # all phases
 ```
 
+**Tracking (optional):** every script logs to Weights & Biases when `WANDB_PROJECT` is set. Runs are named after the sweep job and grouped by phase (`tracking.py`).
+
+```bash
+wandb login                                  # once, on a node with internet
+export WANDB_PROJECT=e0334-flat-minima
+export WANDB_MODE=offline                    # only if the GPU node has no internet; then, from the head node:
+wandb sync results/wandb/offline-run-*
+```
+
 Settings and their paper sources: `Curvature-GLUE/README.md` (GLUE), `Maximum-Hessian/README.md` (Kaur et al.), `Entropy-SGD/README.md` (Chaudhari et al., `esgd-*` phases) and `SAM/README.md` (X-SAM, Eigen-SAM, WSAM tables, `sam-*` / `wsam-*` phases).
