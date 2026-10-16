@@ -10,7 +10,7 @@ enough to form it, and the diagonal Fisher information for All-CNN-BN.
                     moment estimates
 
 Each network is trained until it reaches the error the paper reports (test error 2.4%, 2.5%,
-11.2%; the char-LSTM until it reproduces the text), then the eigenvalues are saved to
+11.2%; the char-LSTM until its accuracy on the text stops improving), then the eigenvalues are saved to
 <out>.npy and a summary to <out>.
 
 Not in the paper (ours): the training hyperparameters, and the Hessian is computed on a fixed
@@ -125,11 +125,22 @@ def full_hessian(model, loss_fn, batches, chunk):
 
 
 def eigenvalues(H):
-    """Eigenvalues of the symmetric H (lower triangle), on the GPU if it fits."""
-    try:
-        return torch.linalg.eigvalsh(H).cpu().numpy()
-    except torch.cuda.OutOfMemoryError:
-        return torch.linalg.eigvalsh(H.cpu()).numpy()
+    """Eigenvalues of the symmetric H (lower triangle). cuSOLVER rejects matrices of this size
+    (CUSOLVER_STATUS_INVALID_VALUE for n >~ 30k), so MAGMA is tried next, then LAPACK on the CPU."""
+    assert torch.isfinite(H).all(), "Hessian has NaN/inf entries"
+    if H.is_cuda:
+        for lib in ("cusolver", "magma"):
+            try:
+                torch.backends.cuda.preferred_linalg_library(lib)
+                return torch.linalg.eigvalsh(H).cpu().numpy()
+            except RuntimeError as e:  # includes LinAlgError and CUDA out-of-memory
+                print(f"eigvalsh with {lib} failed ({str(e)[:80]}...), trying the next backend", flush=True)
+        H = H.cpu()
+        torch.cuda.empty_cache()
+    start = time.time()
+    eig = torch.linalg.eigvalsh(H).numpy()
+    print(f"eigvalsh on the CPU took {(time.time() - start) / 60:.1f} min", flush=True)
+    return eig
 
 
 # ---- training ------------------------------------------------------------------
@@ -168,7 +179,10 @@ def train_char(args, device):
     x, y = data[:, :-1], data[:, 1:]
     model = SmallCharLSTM().to(device)
     opt = torch.optim.Adam(model.parameters(), lr=1e-2)
-    for step in range(1, 20001):  # full batch, until every character is reproduced (ours)
+    # Full batch until the text is reproduced as well as it can be (ours): some contexts are
+    # ambiguous, so stop when accuracy has not improved for 2,000 steps, or after 20,000.
+    best, best_step = 0.0, 0
+    for step in range(1, 20001):
         opt.zero_grad()
         logits = model(x)
         loss = F.cross_entropy(logits.flatten(0, 1), y.flatten())
@@ -177,7 +191,9 @@ def train_char(args, device):
         acc = (logits.argmax(-1) == y).float().mean().item()
         if step % 500 == 0:
             print(f"step {step} loss {loss.item():.4f} char accuracy {acc:.4f}", flush=True)
-        if acc == 1.0:
+        if acc > best:
+            best, best_step = acc, step
+        if acc == 1.0 or step - best_step >= 2000:
             break
     return model, x, y, dict(steps=step, train_loss=loss.item(), train_char_acc=acc)
 
