@@ -21,6 +21,8 @@ import argparse
 import json
 import math
 import os
+import sys
+import threading
 import time
 
 import numpy as np
@@ -28,6 +30,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.func import functional_call, grad, vjp, vmap
+from tqdm import tqdm
+
 import train_image
 import tracking  # importable once train_image has put the repo root on the path
 
@@ -96,6 +100,11 @@ def char_lines(text_dir, lines=256, length=32):
 
 # ---- exact Hessian -------------------------------------------------------------
 
+def progress(**kw):
+    """tqdm that redraws every second in a terminal and every 30 s in a log file (sweep.py)."""
+    return tqdm(mininterval=1 if sys.stderr.isatty() else 30, file=sys.stderr, **kw)
+
+
 def full_hessian(model, loss_fn, batches, chunk):
     """Exact Hessian of the mean loss over `batches`, built row by row from Hessian-vector products."""
     model.eval()
@@ -113,32 +122,64 @@ def full_hessian(model, loss_fn, batches, chunk):
         return out
 
     H = torch.zeros(n, n, device=theta.device)
-    for x, y in batches:
-        f = lambda t: loss_fn(functional_call(model, {**unflat(t), **buffers}, (x,)), y)
-        _, row = vjp(grad(f), theta)  # row(v) = H v = v^T H
-        for i in range(0, n, chunk):
-            m = min(chunk, n - i)
-            e = torch.zeros(m, n, device=theta.device)
-            e[torch.arange(m), i + torch.arange(m)] = 1
-            H[i:i + m] += vmap(row)(e)[0] / len(batches)
+    with progress(total=len(batches) * math.ceil(n / chunk), desc=f"Hessian {n}x{n}", unit="chunk") as bar:
+        for x, y in batches:
+            f = lambda t: loss_fn(functional_call(model, {**unflat(t), **buffers}, (x,)), y)
+            _, row = vjp(grad(f), theta)  # row(v) = H v = v^T H
+            for i in range(0, n, chunk):
+                m = min(chunk, n - i)
+                e = torch.zeros(m, n, device=theta.device)
+                e[torch.arange(m), i + torch.arange(m)] = 1
+                H[i:i + m] += vmap(row)(e)[0] / len(batches)
+                bar.update(1)
     return H
+
+
+def cpu_eigvalsh(H):
+    """torch.linalg.eigvalsh on the CPU with a time bar. LAPACK reports no progress, so the bar's
+    total is an estimate: the time of a 2000 x 2000 problem scaled by (n / 2000)^3.
+    Uses $EIG_THREADS CPU threads (default 16, a fair share of a shared node)."""
+    threads = torch.get_num_threads()
+    torch.set_num_threads(int(os.environ.get("EIG_THREADS", 16)))
+    print(f"eigvalsh on {torch.get_num_threads()} CPU threads", flush=True)
+    A = torch.randn(2000, 2000)
+    t = time.time()
+    torch.linalg.eigvalsh(A + A.T)
+    estimate = (time.time() - t) * (len(H) / 2000) ** 3
+    out = {}
+
+    def work():
+        try:
+            out["eig"] = torch.linalg.eigvalsh(H)
+        except Exception as e:  # re-raised below, in the main thread
+            out["error"] = e
+
+    thread = threading.Thread(target=work)
+    thread.start()
+    with progress(total=max(1, round(estimate)), desc="eigenvalues on CPU (total is an estimate)", unit="s") as bar:
+        while thread.is_alive():
+            thread.join(timeout=1.0)
+            bar.update(1)
+    torch.set_num_threads(threads)
+    if "error" in out:
+        raise out["error"]
+    return out["eig"].numpy()
 
 
 def eigenvalues(H):
     """Eigenvalues of the symmetric H (lower triangle). cuSOLVER rejects matrices of this size
-    (CUSOLVER_STATUS_INVALID_VALUE for n >~ 30k), so MAGMA is tried next, then LAPACK on the CPU."""
+    (CUSOLVER_STATUS_INVALID_VALUE for n >~ 30k), and MAGMA aborts the process, so larger ones
+    go to LAPACK on the CPU."""
     assert torch.isfinite(H).all(), "Hessian has NaN/inf entries"
     if H.is_cuda:
-        for lib in ("cusolver", "magma"):
-            try:
-                torch.backends.cuda.preferred_linalg_library(lib)
-                return torch.linalg.eigvalsh(H).cpu().numpy()
-            except RuntimeError as e:  # includes LinAlgError and CUDA out-of-memory
-                print(f"eigvalsh with {lib} failed ({str(e)[:80]}...), trying the next backend", flush=True)
+        try:
+            return torch.linalg.eigvalsh(H).cpu().numpy()
+        except RuntimeError as e:  # includes LinAlgError and CUDA out-of-memory
+            print(f"eigvalsh on the GPU failed ({str(e)[:80]}...), using the CPU", flush=True)
         H = H.cpu()
         torch.cuda.empty_cache()
     start = time.time()
-    eig = torch.linalg.eigvalsh(H).numpy()
+    eig = cpu_eigvalsh(H)
     print(f"eigvalsh on the CPU took {(time.time() - start) / 60:.1f} min", flush=True)
     return eig
 
@@ -182,6 +223,7 @@ def train_char(args, device):
     # Full batch until the text is reproduced as well as it can be (ours): some contexts are
     # ambiguous, so stop when accuracy has not improved for 2,000 steps, or after 20,000.
     best, best_step = 0.0, 0
+    bar = progress(total=20000, desc="char-LSTM training (stops at plateau)", unit="step")
     for step in range(1, 20001):
         opt.zero_grad()
         logits = model(x)
@@ -189,12 +231,14 @@ def train_char(args, device):
         loss.backward()
         opt.step()
         acc = (logits.argmax(-1) == y).float().mean().item()
-        if step % 500 == 0:
-            print(f"step {step} loss {loss.item():.4f} char accuracy {acc:.4f}", flush=True)
+        bar.update(1)
+        bar.set_postfix(loss=f"{loss.item():.4f}", acc=f"{acc:.4f}", refresh=False)
         if acc > best:
             best, best_step = acc, step
         if acc == 1.0 or step - best_step >= 2000:
             break
+    bar.close()
+    print(f"step {step} loss {loss.item():.4f} char accuracy {acc:.4f}", flush=True)
     return model, x, y, dict(steps=step, train_loss=loss.item(), train_char_acc=acc)
 
 

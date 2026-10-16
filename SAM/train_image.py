@@ -66,6 +66,9 @@ def parse_args():
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--eval_every", type=int, default=0, help="steps between test evaluations (0 = each epoch)")
     p.add_argument("--lmax_examples", type=int, default=5000, help="0 = skip the final lambda_max")
+    p.add_argument("--lmax_every", type=int, default=0,
+                   help="also track lambda_max every this many epochs (X-SAM Fig. 2; 0 = off)")
+    p.add_argument("--lmax_track_examples", type=int, default=1000)
     p.add_argument("--limit", type=int, default=0, help="steps per epoch (0 = full epoch; for smoke tests)")
     p.add_argument("--data_dir", default=os.path.join(os.environ.get("DATA_ROOT", "."), "vision"))
     p.add_argument("--out", default="result.json")
@@ -206,6 +209,13 @@ def main():
         from torch.nn.attention import SDPBackend, sdpa_kernel
         attention = lambda: sdpa_kernel(SDPBackend.MATH)
 
+    # lambda_max during training: fixed clean training subset, 10 power iterations (ours)
+    params = [p for p in model.parameters() if p.requires_grad]
+    loss_fn = lambda b: F.cross_entropy(model(b[0]), b[1])
+    track = torch.randperm(n, generator=torch.Generator().manual_seed(4321))[:args.lmax_track_examples].to(device)
+    track_batches = [(prep(x_tr[track[i:i + 500]], train=False), y_clean[track[i:i + 500]])
+                     for i in range(0, len(track), 500)] if args.lmax_every else []
+
     curve, step, start, diverged = [], 0, time.time(), False
     epoch, running, seen = 0, 0.0, 0
     while step < total and not diverged:
@@ -242,11 +252,14 @@ def main():
             end_of_epoch = k == per_epoch - 1 or step == total
             if (args.eval_every and step % args.eval_every == 0) or (not args.eval_every and end_of_epoch) \
                     or step == total:
-                acc, _ = evaluate(model, x_te, y_te, prep)
+                acc, test_loss = evaluate(model, x_te, y_te, prep)
                 row = dict(epoch=epoch, step=step, lr=sched.get_last_lr()[0], train_loss=running / seen, test_acc=acc,
-                           minutes=round((time.time() - start) / 60, 2))
+                           test_loss=test_loss, minutes=round((time.time() - start) / 60, 2))
                 if getattr(opt, "top_eigenvalue", None) is not None:
-                    row["lmax_estimate"] = opt.top_eigenvalue
+                    row["lmax_estimate"] = opt.top_eigenvalue  # Eigen-SAM / X-SAM's own power iteration
+                if track_batches and end_of_epoch and (epoch % args.lmax_every == 0 or step == total):
+                    with hessian_mode(model), attention():
+                        row["lmax"] = top_eigenvalue(params, loss_fn, track_batches, iters=10)[0]
                 curve.append(row)
                 running, seen = 0.0, 0
                 print(json.dumps(row), flush=True)
@@ -262,8 +275,7 @@ def main():
             batches = [(prep(x_tr[sub[i:i + 500]], train=False), y_clean[sub[i:i + 500]])
                        for i in range(0, len(sub), 500)]
             with hessian_mode(model), attention():
-                result["lmax"] = top_eigenvalue([p for p in model.parameters() if p.requires_grad],
-                                                lambda b: F.cross_entropy(model(b[0]), b[1]), batches, iters=20)[0]
+                result["lmax"] = top_eigenvalue(params, loss_fn, batches, iters=20)[0]
     result["minutes"] = round((time.time() - start) / 60, 2)
     print(json.dumps({k: result.get(k) for k in ("test_acc", "best_test_acc", "train_loss", "lmax", "minutes")}))
     with open(args.out, "w") as f:

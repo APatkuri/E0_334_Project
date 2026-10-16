@@ -285,7 +285,8 @@ def xe_jobs(model, seed):
     jobs = []
     datasets = ["cifar10", "cifar100", "fashion_mnist"] + (["svhn"] if model != "alexnet" else [])
     for d in datasets:
-        base = dict(dataset=d, model=model, **{**XE, "lr": 0.01 if d == "svhn" else XE["lr"]})
+        base = dict(dataset=d, model=model, **{**XE, "lr": 0.01 if d == "svhn" else XE["lr"]},
+                    lmax_every=10 if model == "resnet18" else None)  # X-SAM Fig. 2: top eigenvalue vs. epoch
         methods = ["sam", "eigensam"] + (["sgd"] if model != "alexnet" else [])  # Eigen-SAM has no AlexNet
         if d != "svhn":  # X-SAM has no SVHN
             methods += ["gsam", "wsam", "xsam"]
