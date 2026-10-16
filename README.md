@@ -4,8 +4,8 @@ PyTorch implementations of the papers in our presentation, plus our contribution
 
 | Folder | Contents |
 |--------|----------|
-| `SAM/` | SAM / ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (`sam_optim`) + GLUE fine-tuning |
-| `Entropy-SGD/` | Entropy-SGD / Entropy-Adam (`entropy_optim`) + GLUE fine-tuning |
+| `SAM/` | SAM / ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (`sam_optim`) + image tables of X-SAM, Eigen-SAM, WSAM + GLUE fine-tuning |
+| `Entropy-SGD/` | Entropy-SGD / Entropy-Adam (`entropy_optim`) + Chaudhari et al. reproduction + GLUE fine-tuning |
 | `Maximum-Hessian/` | λmax and Hessian-trace tools (`hessian_tools`) + Kaur et al. vision experiments |
 | `Curvature-GLUE/` | Our contribution: every optimizer on BERT/GLUE with curvature measurements |
 | `sweep.py` | Runs all experiments as a GPU job queue, settings taken from the papers |
@@ -28,7 +28,9 @@ source .venv/bin/activate                         # also sets DATA_ROOT and HF_H
 |------|------|----------|
 | GLUE (RTE, MRPC, CoLA, SST-2, QNLI, QQP, MNLI) | 1–2 GB | `$DATA_ROOT/huggingface` |
 | `bert-base-uncased` | 0.45 GB | `$DATA_ROOT/huggingface` |
-| CIFAR-10, Fashion-MNIST | 0.4 GB | `$DATA_ROOT/vision` |
+| CIFAR-10/100, Fashion-MNIST, MNIST, SVHN | 1.2 GB | `$DATA_ROOT/vision` |
+| ViT-B/16 ImageNet weights | 0.35 GB | `$DATA_ROOT/torch` |
+| PTB, War and Peace | 10 MB | `$DATA_ROOT/text` |
 
 Plan for ~10 GB of disk including the environment.
 
@@ -68,4 +70,4 @@ python sweep.py vision-3.4 --gpus 5                                             
 python sweep.py --help                                                          # all phases
 ```
 
-Settings and their paper sources: `Curvature-GLUE/README.md` (GLUE) and `Maximum-Hessian/README.md` (Kaur et al.).
+Settings and their paper sources: `Curvature-GLUE/README.md` (GLUE), `Maximum-Hessian/README.md` (Kaur et al.), `Entropy-SGD/README.md` (Chaudhari et al., `esgd-*` phases) and `SAM/README.md` (X-SAM, Eigen-SAM, WSAM tables, `sam-*` / `wsam-*` phases).

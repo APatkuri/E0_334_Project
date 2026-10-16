@@ -33,7 +33,7 @@ from .base import EPS, EntropyBase, norm
 class EntropySGD(EntropyBase):
     def __init__(self, params, base_optimizer, sgld_steps=5, gamma=0.03, gamma_growth=0.0,
                  sgld_lr=0.1, noise=1e-4, alpha=0.75, sgld_optimizer=torch.optim.SGD,
-                 sgld_kwargs=None, scale_by_gamma=False, **kwargs):
+                 sgld_kwargs=None, scale_by_gamma=False, grad_clip=None, **kwargs):
         assert sgld_steps >= 1, "need at least one SGLD step"
         super().__init__(params, base_optimizer, **kwargs)
         self.sgld_steps = sgld_steps
@@ -45,6 +45,7 @@ class EntropySGD(EntropyBase):
         self.sgld_optimizer = sgld_optimizer
         self.sgld_kwargs = sgld_kwargs or {}
         self.scale_by_gamma = scale_by_gamma
+        self.grad_clip = grad_clip  # clip ||grad f(x')|| in the SGLD loop (for RNNs)
         self.gamma = gamma        # scope used in the latest step
         self.grad_ratio = None    # ||outer gradient|| / ||grad f(x)||, for tuning gamma (Sec. 4.2)
 
@@ -65,6 +66,10 @@ class EntropySGD(EntropyBase):
             f, g = self._grad(closure, params)
             if loss is None:
                 loss, g0_norm = f, norm(g)
+            if self.grad_clip is not None:
+                c = self.grad_clip / (norm(g) + EPS)
+                if c < 1:
+                    g = [g_i * c for g_i in g]
             for p, g_i, x_i in zip(params, g, x):
                 p.grad = g_i.sub_(x_i - p, alpha=gamma)  # grad f(x') - gamma (x - x')
             sgld.step()

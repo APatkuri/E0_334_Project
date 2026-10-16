@@ -2,16 +2,26 @@
 
     python prepare_data.py                          # everything below
     python prepare_data.py --glue rte mrpc cola     # only some GLUE tasks
-    python prepare_data.py --no_vision              # skip CIFAR-10 / Fashion-MNIST
+    python prepare_data.py --no_vision              # skip the image datasets and ViT weights
+    python prepare_data.py --no_text                # skip PTB / War and Peace
 
 Everything goes under $DATA_ROOT (set by setup.sh; default ./data):
     $DATA_ROOT/huggingface   GLUE and model weights (the Hugging Face cache, HF_HOME)
-    $DATA_ROOT/vision        CIFAR-10 and Fashion-MNIST, where train_vision.py looks by default
+    $DATA_ROOT/vision        CIFAR-10/100, Fashion-MNIST, MNIST, SVHN, where the vision scripts look by default
+    $DATA_ROOT/torch         ViT-B/16 ImageNet weights (SAM/train_image.py)
+    $DATA_ROOT/text          PTB and War and Peace (Entropy-SGD/train_lm.py)
 """
 import argparse
 import os
+import urllib.request
 
 import torch
+
+# Entropy-SGD Sec. 5.4: PTB as distributed with Zaremba et al. (2014), and the War and Peace text
+# of Karpathy et al. (2015)
+TEXT_URLS = {f"ptb.{s}.txt": f"https://raw.githubusercontent.com/wojzaremba/lstm/master/data/ptb.{s}.txt"
+             for s in ("train", "valid", "test")}
+TEXT_URLS["warpeace_input.txt"] = "https://cs.stanford.edu/people/karpathy/char-rnn/warpeace_input.txt"
 
 GLUE_TASKS = ["rte", "mrpc", "cola", "sst2", "qnli", "qqp", "mnli"]  # the tasks in train_glue.py
 DATA_ROOT = os.path.abspath(os.environ.get("DATA_ROOT", "data"))
@@ -24,6 +34,8 @@ def parse_args():
     p.add_argument("--models", nargs="*", default=["bert-base-uncased"])
     p.add_argument("--vision_dir", default=os.path.join(DATA_ROOT, "vision"))
     p.add_argument("--no_vision", action="store_true")
+    p.add_argument("--text_dir", default=os.path.join(DATA_ROOT, "text"))
+    p.add_argument("--no_text", action="store_true")
     return p.parse_args()
 
 
@@ -60,10 +72,29 @@ def download_models(names):
 
 def download_vision(root):
     from torchvision import datasets
-    for cls in (datasets.CIFAR10, datasets.FashionMNIST):
+    for cls in (datasets.CIFAR10, datasets.CIFAR100, datasets.FashionMNIST, datasets.MNIST):
         train = cls(root, train=True, download=True)
         test = cls(root, train=False, download=True)
         print(f"{cls.__name__}: train {len(train)}, test {len(test)} -> {root}")
+    train, test = (datasets.SVHN(root, split=s, download=True) for s in ("train", "test"))
+    print(f"SVHN: train {len(train)}, test {len(test)} -> {root}")
+    # Eigen-SAM Sec. 6.3: torchvision's ImageNet ViT-B/16 checkpoint, cached in $DATA_ROOT/torch
+    from torchvision.models import ViT_B_16_Weights
+    torch.hub.set_dir(os.path.join(DATA_ROOT, "torch"))
+    ViT_B_16_Weights.IMAGENET1K_V1.get_state_dict(progress=False)
+    print(f"ViT-B/16 ImageNet weights -> {os.path.join(DATA_ROOT, 'torch')}")
+
+
+def download_text(root):
+    os.makedirs(root, exist_ok=True)
+    for name, url in TEXT_URLS.items():
+        path = os.path.join(root, name)
+        if not os.path.exists(path):
+            urllib.request.urlretrieve(url, path + ".part")
+            os.replace(path + ".part", path)
+        text = open(path).read()
+        units = len(text.split()) if name.startswith("ptb") else len(text)
+        print(f"{name}: {units} {'words' if name.startswith('ptb') else 'characters'} -> {root}")
 
 
 def main():
@@ -73,6 +104,8 @@ def main():
     download_models(args.models)
     if not args.no_vision:
         download_vision(args.vision_dir)
+    if not args.no_text:
+        download_text(args.text_dir)
     print("All data ready.")
 
 

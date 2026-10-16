@@ -21,6 +21,14 @@ Reproduction of Kaur et al. (2023), Maximum-Hessian/train_vision.py, any order:
     vision-smoke, vision-3.1 (Figs. 1-3), vision-3.1-fullbatch (Fig. 3, batch 50000; very slow),
     vision-3.2 (Figs. 4-5), vision-3.3 (Figs. 6-7), vision-3.4 (Figs. 8-9), vision-3.5 (Figs. 10-11),
     vision-a3 (Fig. 14)
+
+Reproduction of Chaudhari et al. (2017), Entropy-SGD/, any order:
+    esgd-smoke, esgd-mnist (Sec. 5.2), esgd-cifar (Sec. 5.3), esgd-ptb (Sec. 5.4.1),
+    esgd-char (Sec. 5.4.2), esgd-5.1 (Hessian spectra, Figs. 1 and 3)
+
+Image tables of the SAM-variant papers, SAM/train_image.py, any order (cheapest first):
+    sam-smoke, sam-r18, sam-alexnet (X-SAM T1 + Eigen-SAM T1), sam-vit (Eigen-SAM T2),
+    wsam-r18, wsam-noise (WSAM T2, T5-T6, T8-T9), sam-r50, sam-wrn, wsam-wrn (very slow)
 """
 import argparse
 import json
@@ -196,6 +204,170 @@ def vision_phase(phase):
     raise KeyError(phase)
 
 
+# ---- Chaudhari et al. (2017) Entropy-SGD reproduction ----------------------------------------
+# Every setting the paper states is a default of the scripts (their PAPER tables), so jobs pass only
+# the model, optimizer and seed. Seeds are the outer loop: seed 0 of everything finishes first.
+ESGD_DIR = os.path.join(ROOT, "Entropy-SGD")
+
+
+def esgd_job(script, seed, group="esgd", **flags):
+    name = script.split(".")[0] + "_" + "_".join(f"{k}{fmt(v)}" for k, v in flags.items()) + f"_s{seed}"
+    argv = ["--seed", str(seed)] + [x for k, v in flags.items() for x in (f"--{k}", str(v))]
+    return name, os.path.join(ESGD_DIR, script), argv, group, ".json"
+
+
+def esgd_phase(phase):
+    img, lm, spec = "train_image.py", "train_lm.py", "spectrum.py"
+    if phase == "esgd-smoke":
+        quick = dict(group="esgd-smoke", epochs=1)
+        return [esgd_job(img, 0, model="mnistfc", optim="adam", limit=50, **quick),
+                esgd_job(img, 0, model="lenet", optim="entropysgd", limit=10, **quick),
+                esgd_job(img, 0, model="allcnn", optim="sgd", limit=20, **quick),
+                esgd_job(img, 0, model="allcnn", optim="entropysgd", limit=5, **quick),
+                esgd_job(lm, 0, task="ptb", optim="sgd", limit=50, **quick),
+                esgd_job(lm, 0, task="ptb", optim="entropysgd", limit=5, **quick),
+                esgd_job(lm, 0, task="char", optim="adam", limit=50, **quick),
+                esgd_job(lm, 0, task="char", optim="entropyadam", limit=10, **quick),
+                esgd_job(spec, 0, group="esgd-smoke", model="small_mnistfc", max_epochs=1, hessian_examples=1000),
+                esgd_job(spec, 0, group="esgd-smoke", model="small_charlstm"),
+                esgd_job(spec, 0, group="esgd-smoke", model="allcnn_fisher", max_epochs=1)]
+    if phase == "esgd-mnist":  # Sec. 5.2, Fig. 4: 5 independent runs (Sec. 5.2)
+        return [esgd_job(img, s, model=m, optim=o) for s in range(5)
+                for m in ("mnistfc", "lenet") for o in ("adam", "entropysgd")]
+    if phase == "esgd-cifar":  # Sec. 5.3, Fig. 5: number of runs not stated; 5 as for MNIST (ours)
+        return [esgd_job(img, s, model="allcnn", optim=o) for s in range(5) for o in ("sgd", "entropysgd")]
+    if phase == "esgd-ptb":  # Sec. 5.4.1, Fig. 6a: number of runs not stated; 5 (ours)
+        return [esgd_job(lm, s, task="ptb", optim=o) for s in range(5) for o in ("sgd", "entropysgd")]
+    if phase == "esgd-char":  # Sec. 5.4.2, Fig. 6b: 4 independent runs (stated for Entropy-Adam)
+        return [esgd_job(lm, s, task="char", optim=o) for s in range(4) for o in ("adam", "entropyadam")]
+    if phase == "esgd-5.1":  # Sec. 5.1, Figs. 1 and 3: one network each (runs in Fig. 3: 2, 5 and 4)
+        runs = dict(small_lenet=1, small_mnistfc=2, small_charlstm=5, allcnn_fisher=4)
+        return [esgd_job(spec, s, model=m) for m, n in runs.items() for s in range(n)]
+    raise KeyError(phase)
+
+
+# ---- SAM-variant papers: image classification tables (SAM/train_image.py) --------------------
+# X-SAM Sec. 6.1 and Eigen-SAM Sec. 6.2 share one protocol: SGD (momentum 0.9), batch 256, lr 0.1
+# (SVHN 0.01, Eigen-SAM), cosine schedule, weight decay 5e-5, 200 epochs, crop + flip, 3 seeds.
+# Their SAM and Eigen-SAM runs are therefore the same runs. Eigen-SAM App. E: SGD gets 400 epochs.
+IMG_SCRIPT = os.path.join(ROOT, "SAM", "train_image.py")
+XE = dict(batch_size=256, lr=0.1, weight_decay=5e-5, epochs=200)
+XE_RHO = {"cifar10": 0.05, "fashion_mnist": 0.05, "cifar100": 0.1, "svhn": 0.01}  # X-SAM 6.1, Eigen-SAM App. E
+XE_WSAM_RHO = {"cifar10": 2.0, "fashion_mnist": 2.0, "cifar100": 4.0}               # X-SAM Sec. 6.1
+XE_GSAM_ALPHA = 0.02  # not given by X-SAM (its Appendix A is missing); WSAM Table 3's ResNet-18 value (ours)
+XE_WSAM_GAMMA = 0.88  # not given by X-SAM; WSAM Table 3's CIFAR-10 value (ours)
+XE_SEEDS = range(3)   # X-SAM Sec. 6.1, Eigen-SAM App. E
+# WSAM Sec. 6.1, Table 3: SgdM 400 epochs, SAM-like 200; cosine; rho 0.2; 5 seeds
+WSAM_BASE = {"resnet18": dict(batch_size=128, lr=0.05, weight_decay=1e-3),
+             "wrn28_10": dict(batch_size=256, lr=0.1, weight_decay=1e-3)}
+WSAM_TUNED = {  # (GSAM alpha, WSAM gamma), WSAM Table 3. Coupled-WSAM (Table 8) reuses gamma (ours)
+    ("resnet18", "cifar10"): (0.02, 0.88), ("resnet18", "cifar100"): (0.03, 0.82),
+    ("wrn28_10", "cifar10"): (0.01, 0.88), ("wrn28_10", "cifar100"): (0.2, 0.94)}
+WSAM_NOISE = {  # WSAM Table 5: noise rate -> SAM rho, GSAM (rho, alpha), WSAM (rho, gamma)
+    0.2: (0.2, (0.2, 0.01), (0.2, 0.91)), 0.4: (0.2, (0.2, 0.02), (0.2, 0.91)),
+    0.6: (0.1, (0.1, 0.3), (0.1, 0.93)), 0.8: (0.05, (0.05, 0.3), (0.05, 0.92))}
+WSAM_SEEDS = range(5)  # WSAM Sec. 6.1; also used for label noise (not stated there; ours)
+
+
+def img_job(seed, group="img", **flags):
+    flags = {k: v for k, v in flags.items() if v is not None}
+    name = "_".join(f"{k}{fmt(v)}" for k, v in flags.items() if v is not True)
+    name += "".join(f"_{k}" for k, v in flags.items() if v is True) + f"_s{seed}"
+    argv = ["--seed", str(seed)]
+    for k, v in flags.items():
+        argv += [f"--{k}"] if v is True else [f"--{k}", str(v)]
+    return name, IMG_SCRIPT, argv, group, ".json"
+
+
+def xe_jobs(model, seed):
+    """X-SAM Table 1 and Eigen-SAM Table 1 rows for one model and seed."""
+    jobs = []
+    datasets = ["cifar10", "cifar100", "fashion_mnist"] + (["svhn"] if model != "alexnet" else [])
+    for d in datasets:
+        base = dict(dataset=d, model=model, **{**XE, "lr": 0.01 if d == "svhn" else XE["lr"]})
+        methods = ["sam", "eigensam"] + (["sgd"] if model != "alexnet" else [])  # Eigen-SAM has no AlexNet
+        if d != "svhn":  # X-SAM has no SVHN
+            methods += ["gsam", "wsam", "xsam"]
+        for m in methods:
+            extra = dict(optim=m)
+            if m == "sgd":
+                extra["epochs"] = 400
+            elif m == "wsam":
+                extra.update(rho=XE_WSAM_RHO[d], gamma=XE_WSAM_GAMMA)
+            else:
+                extra.update(rho=XE_RHO[d], alpha={"gsam": XE_GSAM_ALPHA, "sam": None}.get(m, 0.2))
+            jobs.append(img_job(seed, **{**base, **extra}))
+    return jobs
+
+
+def wsam_jobs(model, seed):
+    """WSAM Table 2 (without ESAM) and Table 8 (Coupled-WSAM) for one model and seed."""
+    jobs = []
+    for d in ("cifar10", "cifar100"):
+        alpha, gamma = WSAM_TUNED[(model, d)]
+        base = dict(dataset=d, model=model, **WSAM_BASE[model], epochs=200, rho=0.2)
+        jobs += [img_job(seed, **{**base, "optim": "sgd", "epochs": 400, "rho": None}),
+                 img_job(seed, **base, optim="sam"),
+                 img_job(seed, **base, optim="gsam", alpha=alpha),
+                 img_job(seed, **base, optim="wsam", gamma=gamma),
+                 img_job(seed, **base, optim="wsam", gamma=gamma, coupled=True)]
+    return jobs
+
+
+def noise_jobs(seed):
+    """WSAM Sec. 6.3, Tables 5-6: ResNet-18 on CIFAR-10 with symmetric label noise, 200 epochs for all."""
+    jobs = []
+    for rate, (sam_rho, (g_rho, g_alpha), (w_rho, w_gamma)) in WSAM_NOISE.items():
+        base = dict(dataset="cifar10", model="resnet18", **WSAM_BASE["resnet18"], epochs=200, label_noise=rate)
+        jobs += [img_job(seed, **base, optim="sgd"), img_job(seed, **base, optim="sam", rho=sam_rho),
+                 img_job(seed, **base, optim="gsam", rho=g_rho, alpha=g_alpha),
+                 img_job(seed, **base, optim="wsam", rho=w_rho, gamma=w_gamma)]
+    return jobs
+
+
+def vit_jobs(seed):
+    """Eigen-SAM Sec. 6.3, Table 2: ImageNet ViT-B/16 fine-tuned on CIFAR-10/100 at lr 0.01, 4k steps
+    (SGD: 8k). Batch 64, no weight decay, cosine schedule, 224x224 inputs: ours (not stated)."""
+    jobs = []
+    for d in ("cifar10", "cifar100"):
+        base = dict(dataset=d, model="vit_b_16", batch_size=64, lr=0.01, weight_decay=0.0, eval_every=1000,
+                    lmax_examples=0)
+        jobs += [img_job(seed, **base, optim="sgd", steps=8000),
+                 img_job(seed, **base, optim="sam", steps=4000, rho=XE_RHO[d]),
+                 img_job(seed, **base, optim="eigensam", steps=4000, rho=XE_RHO[d], alpha=0.2)]
+    return jobs
+
+
+def sam_phase(phase):
+    if phase == "sam-smoke":  # every model, optimizer and dataset once, a few steps
+        q = dict(group="img-smoke", epochs=1, limit=3, lmax_examples=500)
+        jobs = [img_job(0, dataset="cifar10", model=m, optim="sam", **q) for m in ("resnet18", "resnet50", "wrn28_10", "alexnet")]
+        jobs += [img_job(0, dataset="cifar100", model="resnet18", optim=o, eig_every=2, **q)
+                 for o in ("sgd", "gsam", "wsam", "eigensam", "xsam")]
+        jobs += [img_job(0, dataset="fashion_mnist", model="resnet18", optim="wsam", coupled=True, **q),
+                 img_job(0, dataset="svhn", model="resnet18", optim="sgd", label_noise=0.4, **q),
+                 img_job(0, dataset="cifar10", model="vit_b_16", optim="eigensam", eig_every=2, steps=3, batch_size=64,
+                         group="img-smoke", lmax_examples=0)]
+        return jobs
+    if phase == "sam-r18":       # X-SAM T1 + Eigen-SAM T1, ResNet-18 rows
+        return [j for s in XE_SEEDS for j in xe_jobs("resnet18", s)]
+    if phase == "sam-alexnet":   # X-SAM T1, AlexNet rows
+        return [j for s in XE_SEEDS for j in xe_jobs("alexnet", s)]
+    if phase == "sam-r50":       # X-SAM T1 + Eigen-SAM T1, ResNet-50 rows
+        return [j for s in XE_SEEDS for j in xe_jobs("resnet50", s)]
+    if phase == "sam-wrn":       # X-SAM T1 + Eigen-SAM T1, WRN-28-10 rows (very slow)
+        return [j for s in XE_SEEDS for j in xe_jobs("wrn28_10", s)]
+    if phase == "sam-vit":       # Eigen-SAM T2
+        return [j for s in XE_SEEDS for j in vit_jobs(s)]
+    if phase == "wsam-r18":      # WSAM T2, T8, T9, ResNet-18
+        return [j for s in WSAM_SEEDS for j in wsam_jobs("resnet18", s)]
+    if phase == "wsam-noise":    # WSAM T5-T6
+        return [j for s in WSAM_SEEDS for j in noise_jobs(s)]
+    if phase == "wsam-wrn":      # WSAM T2, T8, WRN-28-10 (very slow)
+        return [j for s in WSAM_SEEDS for j in wsam_jobs("wrn28_10", s)]
+    raise KeyError(phase)
+
+
 PHASES = {
     "glue-smoke": glue_smoke_jobs,
     "glue-lr": lambda: stage_jobs(lr_stage),
@@ -205,6 +377,10 @@ PHASES = {
     "glue-kaur": kaur_glue_jobs,
     **{p: (lambda p=p: vision_phase(p)) for p in ("vision-smoke", "vision-3.1", "vision-3.1-fullbatch", "vision-3.2",
                                                   "vision-3.3", "vision-3.4", "vision-3.5", "vision-a3")},
+    **{p: (lambda p=p: esgd_phase(p)) for p in ("esgd-smoke", "esgd-mnist", "esgd-cifar", "esgd-ptb",
+                                                "esgd-char", "esgd-5.1")},
+    **{p: (lambda p=p: sam_phase(p)) for p in ("sam-smoke", "sam-r18", "sam-alexnet", "sam-vit", "wsam-r18",
+                                               "wsam-noise", "sam-r50", "sam-wrn", "wsam-wrn")},
 }
 
 
