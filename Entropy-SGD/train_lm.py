@@ -47,11 +47,13 @@ PAPER = {
                                   sgld_lr=1.0, noise=1e-4, momentum=0.5, beta1=0.5),
 }
 TASK = {
-    # Zaremba et al. (2014), large: 2 x 1500, embedding 1500, 35 steps, batch 20, dropout 0.65, clip 10
-    "ptb": dict(layers=2, hidden=1500, bptt=35, batch_size=20, dropout=0.65, init=0.04, clip=10.0),
+    # Zaremba et al. (2014), large: 2 x 1500, embedding 1500, 35 steps, batch 20, dropout 0.65, clip 10.
+    # Their loss is summed over the 35 time steps and averaged over the batch (time_sum), which lr 1,
+    # clip 10 and the paper's gamma / eta' assume
+    "ptb": dict(layers=2, hidden=1500, bptt=35, batch_size=20, dropout=0.65, init=0.04, clip=10.0, time_sum=True),
     # Sec. 5.4.2: 2 x 128 unrolled 50 steps; batch 50, no dropout, init U(-0.08, 0.08) and clip 5
-    # are char-rnn's defaults (Karpathy et al. 2015; ours)
-    "char": dict(layers=2, hidden=128, bptt=50, batch_size=50, dropout=0.0, init=0.08, clip=5.0),
+    # are char-rnn's defaults (Karpathy et al. 2015; ours). char-rnn averages the loss over time
+    "char": dict(layers=2, hidden=128, bptt=50, batch_size=50, dropout=0.0, init=0.08, clip=5.0, time_sum=False),
 }
 ALPHA = 0.75  # Sec. 4.2
 
@@ -180,7 +182,8 @@ def main():
         x, y = train[i:i + args.bptt], train[i + 1:i + 1 + args.bptt]
         logits, new_state = model(x[:len(y)], state)
         state = detach(new_state)
-        return F.cross_entropy(logits.flatten(0, 1), y.flatten())
+        loss = F.cross_entropy(logits.flatten(0, 1), y.flatten())
+        return loss * len(y) if args.time_sum else loss  # len(y) = time steps in this segment
 
     curve, start, diverged = [], time.time(), False
     for epoch in range(args.epochs):
@@ -205,7 +208,8 @@ def main():
             diverged = True
             break
         v, t = evaluate(model, valid, args.bptt), evaluate(model, test, args.bptt)
-        row = dict(epoch=epoch + 1, effective_epochs=(epoch + 1) * args.L, lr=lr, train_loss=total / per_epoch,
+        train_loss = total / per_epoch / (args.bptt if args.time_sum else 1)  # per token, as val/test
+        row = dict(epoch=epoch + 1, effective_epochs=(epoch + 1) * args.L, lr=lr, train_loss=train_loss,
                    val_loss=v, test_loss=t, val_ppl=math.exp(v), test_ppl=math.exp(t))
         if entropy:
             row["grad_ratio"] = opt.grad_ratio

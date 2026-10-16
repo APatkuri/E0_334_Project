@@ -53,7 +53,7 @@ def load(path):
     runs = []
     for f in glob.glob(os.path.join(path, "*.json")):
         r = json.load(open(f))
-        if r.get("curve"):
+        if "curve" in r:  # also runs that diverged before their first evaluation (empty curve)
             r["method"] = "coupled" if r.get("coupled") else r["optim"]
             runs.append(r)
     return runs

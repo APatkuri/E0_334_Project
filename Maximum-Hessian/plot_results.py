@@ -35,11 +35,14 @@ def parse_args():
 
 def load(paths, where):
     runs = [json.loads(line) for path in paths for line in open(path) if line.strip()]
-    runs = [r for r in runs if "lmax" in r]  # skip diverged runs
     for cond in where:
-        key, value = cond.split("=", 1)
-        runs = [r for r in runs if str(r.get(key)) == value]
-    return runs
+        key, values = cond.split("=", 1)
+        runs = [r for r in runs if str(r.get(key)) in values.split(",")]
+    # The paper's protocol ends every run at 99% train accuracy; others are not comparable
+    done = [r for r in runs if "lmax" in r and r.get("reached_target", True)]
+    if len(done) < len(runs):
+        print(f"skipping {len(runs) - len(done)} runs that diverged or did not reach --target_acc")
+    return done
 
 
 def mean(values):

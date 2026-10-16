@@ -72,7 +72,7 @@ python sweep.py esgd-mnist --gpus 0 --per_gpu 3      # then esgd-cifar, esgd-ptb
 python Entropy-SGD/analyze.py --plot
 ```
 
-**Not stated in the paper (ours):** batch size 128 (images), MNIST standardization, LeNet layer sizes (Caffe 20-50-500), GCN scale 55 and ZCA bias 0.1 (Goodfellow et al.'s pylearn2), weight decay inside the SGLD loop, number of runs for CIFAR/PTB (5), PTB batch/dropout/init/clip from Zaremba et al., char-LSTM batch 50 / clip 5 / init from char-rnn, Entropy-Adam's η′ = 1 and ε = 1e-4, momentum 0.5 in both loops for RNNs, Sec. 5.1 training rates and the 10k-image Hessian subset.
+**Not stated in the paper (ours):** batch size 128 (images), MNIST standardization, LeNet layer sizes (Caffe 20-50-500), GCN scale 55 and ZCA bias 0.1 (Goodfellow et al.'s pylearn2), weight decay inside the SGLD loop, number of runs for CIFAR/PTB (5), PTB batch/dropout/init/clip and loss summed over the 35 time steps from Zaremba et al., char-LSTM batch 50 / clip 5 / init from char-rnn, Entropy-Adam's η′ = 1 and ε = 1e-4, momentum 0.5 in both loops for RNNs, Sec. 5.1 training rates and the 10k-image Hessian subset.
 
 **Known differences:**
 - War and Peace (Karpathy's file) has 83 distinct characters, not 87.

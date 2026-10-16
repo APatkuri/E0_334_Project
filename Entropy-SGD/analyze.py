@@ -21,13 +21,18 @@ PAPER = {"mnistfc": (1.37, 120, 1.39, 66), "lenet": (0.50, 80, 0.51, 100), "allc
 
 
 def load(results):
-    runs = defaultdict(list)
+    """Finished runs, and the number of diverged runs, by (model or task, entropy optimizer?)."""
+    runs, diverged = defaultdict(list), defaultdict(int)
     for path in glob.glob(os.path.join(results, "*.json")):
         r = json.load(open(path))
-        if r.get("curve") and not r.get("diverged"):
-            key = r.get("model") or r.get("task")
-            runs[(key, r["optim"].startswith("entropy"))].append(r)
-    return runs
+        if "curve" not in r:  # spectrum.py summaries
+            continue
+        key = (r.get("model") or r.get("task"), r["optim"].startswith("entropy"))
+        if r["diverged"] or not r["curve"]:
+            diverged[key] += 1
+        else:
+            runs[key].append(r)
+    return runs, diverged
 
 
 def metric(r):
@@ -36,7 +41,7 @@ def metric(r):
     return r["test_ppl"] if r["task"] == "ptb" else r["test_loss"]  # char: the paper's number is a loss
 
 
-def table(runs):
+def table(runs, diverged):
     print(f"{'model':8s} {'method':12s} {'ours (mean +- std)':>20s} {'n':>2s} {'eff. epochs':>11s} {'paper':>8s}")
     for key, (pe, pe_ep, pb, pb_ep) in PAPER.items():
         for entropy in (True, False):
@@ -44,12 +49,14 @@ def table(runs):
             paper, paper_ep = (pe, pe_ep) if entropy else (pb, pb_ep)
             name = ("Entropy-" + ("Adam" if key == "char" else "SGD")) if entropy else \
                 {"mnistfc": "Adam", "lenet": "Adam", "char": "Adam"}.get(key, "SGD")
+            d = diverged.get((key, entropy), 0)
+            note = f"  ({d} diverged, not counted)" if d else ""
             if not rs:
-                print(f"{key:8s} {name:12s} {'-':>20s} {0:2d} {'-':>11s} {paper:8.3f}")
+                print(f"{key:8s} {name:12s} {'-':>20s} {0:2d} {'-':>11s} {paper:8.3f}{note}")
                 continue
             v = np.array([metric(r) for r in rs])
             ep = rs[0]["curve"][-1]["effective_epochs"]
-            print(f"{key:8s} {name:12s} {v.mean():12.3f} +- {v.std():5.3f} {len(v):2d} {ep:11d} {paper:8.3f}")
+            print(f"{key:8s} {name:12s} {v.mean():12.3f} +- {v.std():5.3f} {len(v):2d} {ep:11d} {paper:8.3f}{note}")
 
 
 def plot(runs, results, out):
@@ -93,8 +100,8 @@ def main():
     p.add_argument("--results", default=os.path.join(HERE, "..", "results", "esgd"))
     p.add_argument("--plot", action="store_true")
     args = p.parse_args()
-    runs = load(args.results)
-    table(runs)
+    runs, diverged = load(args.results)
+    table(runs, diverged)
     for path in sorted(glob.glob(os.path.join(args.results, "spectrum_*.json"))):
         r = json.load(open(path))
         print(f"{r['model']:15s} seed {r['seed']}: {r['params']} params, {r['negative']} negative, "
