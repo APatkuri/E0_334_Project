@@ -292,8 +292,8 @@ def xe_jobs(model, seed):
             extra = dict(optim=m)
             if m == "sgd":
                 extra["epochs"] = 400
-            elif m == "wsam":
-                extra.update(rho=XE_WSAM_RHO[d], gamma=XE_WSAM_GAMMA)
+            elif m == "wsam":  # radii of 2 and 4 only work scale-invariant: adaptive (ours)
+                extra.update(rho=XE_WSAM_RHO[d], gamma=XE_WSAM_GAMMA, adaptive=True)
             else:
                 extra.update(rho=XE_RHO[d], alpha={"gsam": XE_GSAM_ALPHA, "sam": None}.get(m, 0.2))
             jobs.append(img_job(seed, **{**base, **extra}))

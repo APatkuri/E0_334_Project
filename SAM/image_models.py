@@ -5,8 +5,9 @@ None of the papers gives its exact definitions, so these are the usual CIFAR ver
     resnet18, resnet50  He et al. (2016) with a 3x3 stride-1 stem and no max-pool, the common
                         CIFAR adaptation (github.com/kuangliu/pytorch-cifar)
     wrn28_10            Zagoruyko & Komodakis (2016), pre-activation, widen factor 10, no dropout
-    alexnet             Krizhevsky et al. (2012) conv stack 64-192-384-256-256 sized for 32x32
-                        inputs; ceil-mode pooling so 28x28 Fashion-MNIST also fits
+    alexnet             Krizhevsky et al. (2012) conv stack 64-192-384-256-256 with 3x3 stride-1
+                        convs for 32x32 inputs, then dropout-FC4096-dropout-FC4096 as in the
+                        original; ceil-mode pooling so 28x28 Fashion-MNIST also ends at 4x4
     vit_b_16            torchvision's ImageNet-1k checkpoint (Eigen-SAM Sec. 6.3), new zero head
 
 All take `in_channels` (1 for Fashion-MNIST) and `num_classes`.
@@ -118,13 +119,14 @@ class WideResNet(nn.Module):
 
 def alexnet(in_channels, num_classes):
     pool = lambda: nn.MaxPool2d(2, ceil_mode=True)
-    return nn.Sequential(
-        nn.Conv2d(in_channels, 64, 11, 4, 5), nn.ReLU(inplace=True), pool(),
-        nn.Conv2d(64, 192, 5, padding=2), nn.ReLU(inplace=True), pool(),
+    return nn.Sequential(  # 32 -> 16 -> 8 -> 4 (Fashion-MNIST: 28 -> 14 -> 7 -> 4)
+        nn.Conv2d(in_channels, 64, 3, padding=1), nn.ReLU(inplace=True), pool(),
+        nn.Conv2d(64, 192, 3, padding=1), nn.ReLU(inplace=True), pool(),
         nn.Conv2d(192, 384, 3, padding=1), nn.ReLU(inplace=True),
         nn.Conv2d(384, 256, 3, padding=1), nn.ReLU(inplace=True),
         nn.Conv2d(256, 256, 3, padding=1), nn.ReLU(inplace=True), pool(),
-        nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(256, num_classes))
+        nn.Flatten(), nn.Dropout(0.5), nn.Linear(256 * 4 * 4, 4096), nn.ReLU(inplace=True),
+        nn.Dropout(0.5), nn.Linear(4096, 4096), nn.ReLU(inplace=True), nn.Linear(4096, num_classes))
 
 
 def vit_b_16(num_classes):

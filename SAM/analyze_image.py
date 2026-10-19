@@ -77,7 +77,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--results", default=os.path.join(HERE, "..", "results", "img"))
     runs = load(p.parse_args().results)
-    xe = [r for r in runs if r["weight_decay"] == 5e-5 and r["model"] != "vit_b_16"]  # X-SAM / Eigen-SAM protocol
+    xe = [r for r in runs if r["weight_decay"] == 5e-5 and r["model"] != "vit_b_16"  # X-SAM / Eigen-SAM protocol
+          and (r["optim"] != "wsam" or r.get("adaptive"))]  # older non-adaptive WSAM runs left out
     ws = [r for r in runs if r["weight_decay"] == 1e-3]                                   # WSAM protocol
 
     for d, table in XSAM_T1.items():

@@ -51,7 +51,8 @@ python train_glue.py --task sst2 --optim xsam --alpha 0.2
 Seeds are the outer loop, so seed 0 of a whole phase finishes first.
 
 **Not stated in the papers (ours):**
-- Architectures: CIFAR ResNets, WRN without dropout, AlexNet for 32×32 inputs (`image_models.py`).
+- Architectures: CIFAR ResNets, WRN without dropout, AlexNet with 3×3 stride-1 convs and dropout FC layers (`image_models.py`). An 11×11 stride-4 stem gave ~75% on CIFAR-10 (paper: 88.7).
+- X-SAM's WSAM uses the adaptive (ASAM) perturbation, the `adaptive` option of the authors' code: its radii of 2 and 4 collapsed plain WSAM to chance accuracy.
 - Input normalization. The cosine schedule is applied per step.
 - Extra SAM forward passes don't update BN running stats.
 - X-SAM's GSAM α (0.02), WSAM γ (0.88), and its p, q (100, 5, from Eigen-SAM). Its Appendix A is missing from the PDF.

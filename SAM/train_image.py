@@ -59,6 +59,7 @@ def parse_args():
     p.add_argument("--rho", type=float, default=0.05)
     p.add_argument("--alpha", type=float, default=0.2, help="GSAM / Eigen-SAM / X-SAM strength")
     p.add_argument("--gamma", type=float, default=0.9, help="WSAM sharpness weight")
+    p.add_argument("--adaptive", action="store_true", help="WSAM: ASAM-style perturbation (scaled by |w|)")
     p.add_argument("--eig_every", type=int, default=100, help="Eigen-SAM / X-SAM: p")
     p.add_argument("--power_iters", type=int, default=5, help="Eigen-SAM / X-SAM: q")
     p.add_argument("--label_noise", type=float, default=0.0, help="symmetric noise rate (WSAM Sec. 6.3)")
@@ -140,7 +141,7 @@ def build_optimizer(args, model):
     if args.optim == "gsam":  # constant rho (X-SAM Sec. 6.1: "the same perturbation radii as SAM")
         return GSAM(params, base, rho=args.rho, alpha=args.alpha, **kw)
     if args.optim == "wsam":
-        return WSAM(params, base, rho=args.rho, gamma=args.gamma, **kw)
+        return WSAM(params, base, rho=args.rho, gamma=args.gamma, adaptive=args.adaptive, **kw)
     if args.optim == "eigensam":
         return EigenSAM(params, base, rho=args.rho, alpha=args.alpha, eig_every=args.eig_every,
                         power_iters=args.power_iters, **kw)
