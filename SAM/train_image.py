@@ -4,8 +4,8 @@
                         CIFAR-10/100, Fashion-MNIST (Sec. 6.1)
     Eigen-SAM Table 1   SGD, SAM, Eigen-SAM; ResNet-18/50, WRN-28-10; + SVHN (Sec. 6.2, App. E)
     Eigen-SAM Table 2   fine-tuning ImageNet ViT-B/16 on CIFAR-10/100 (Sec. 6.3)
-    WSAM Tables 2, 6, 8, 9   SgdM, SAM, GSAM, WSAM, Coupled-WSAM; ResNet-18, WRN-28-10;
-                        label noise (Sec. 6.1, 6.3, 6.5, 6.6)
+    WSAM Tables 2, 6, 9 SgdM, SAM, GSAM, WSAM; ResNet-18, WRN-28-10; label noise
+                        (Sec. 6.1, 6.3, 6.6)
 
 The protocol of each table (and its source) is in ../sweep.py; this script takes it as flags.
 SGD with momentum 0.9 and a per-step cosine schedule, crop (4-pixel zero padding) + flip
@@ -59,7 +59,6 @@ def parse_args():
     p.add_argument("--rho", type=float, default=0.05)
     p.add_argument("--alpha", type=float, default=0.2, help="GSAM / Eigen-SAM / X-SAM strength")
     p.add_argument("--gamma", type=float, default=0.9, help="WSAM sharpness weight")
-    p.add_argument("--coupled", action="store_true", help="WSAM: Coupled-WSAM (WSAM Alg. 4)")
     p.add_argument("--eig_every", type=int, default=100, help="Eigen-SAM / X-SAM: p")
     p.add_argument("--power_iters", type=int, default=5, help="Eigen-SAM / X-SAM: q")
     p.add_argument("--label_noise", type=float, default=0.0, help="symmetric noise rate (WSAM Sec. 6.3)")
@@ -141,7 +140,7 @@ def build_optimizer(args, model):
     if args.optim == "gsam":  # constant rho (X-SAM Sec. 6.1: "the same perturbation radii as SAM")
         return GSAM(params, base, rho=args.rho, alpha=args.alpha, **kw)
     if args.optim == "wsam":
-        return WSAM(params, base, rho=args.rho, gamma=args.gamma, decouple=not args.coupled, **kw)
+        return WSAM(params, base, rho=args.rho, gamma=args.gamma, **kw)
     if args.optim == "eigensam":
         return EigenSAM(params, base, rho=args.rho, alpha=args.alpha, eig_every=args.eig_every,
                         power_iters=args.power_iters, **kw)

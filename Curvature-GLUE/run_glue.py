@@ -7,7 +7,7 @@ both generalization and curvature measured. Each run writes one JSON file (--out
 
 Compute budget (--budget), in units of --epochs * len(train_loader):
     grads  same number of gradient evaluations for every optimizer. One update costs 1 (AdamW),
-           2 (SAM, ASAM, GSAM, WSAM), 2 + (1 + 2q)/p (Eigen-SAM, X-SAM) or L (Entropy-SGD)
+           2 (SAM, GSAM, WSAM), 2 + (1 + 2q)/p (Eigen-SAM, X-SAM) or L (Entropy-SGD)
     steps  same number of updates for every optimizer
 
 Measured:
@@ -55,7 +55,7 @@ TASKS = {  # task -> (text fields, num_labels, dev split, primary metric)
     "qqp": (("question1", "question2"), 2, "validation", "f1"),
     "mnli": (("premise", "hypothesis"), 3, "validation_matched", "acc"),
 }
-OPTIMS = ["adamw", "sam", "asam", "gsam", "wsam", "eigensam", "xsam", "entropysgd"]
+OPTIMS = ["adamw", "sam", "gsam", "wsam", "eigensam", "xsam", "entropysgd"]
 
 
 def parse_args():
@@ -84,7 +84,6 @@ def parse_args():
     p.add_argument("--ascent_frac", type=float, default=1.0, help="SAM: batch fraction for the ascent step")
     p.add_argument("--alpha", type=float, default=None, help="GSAM / Eigen-SAM / X-SAM (default 0.01 / 0.2 / 0.2)")
     p.add_argument("--rho_min", type=float, default=None, help="GSAM: enables the lr-tied rho schedule")
-    p.add_argument("--coupled", action="store_true", help="WSAM: Coupled-WSAM")
     p.add_argument("--eig_every", type=int, default=100, help="Eigen-SAM / X-SAM: p")
     p.add_argument("--power_iters", type=int, default=5, help="Eigen-SAM / X-SAM: q")
     p.add_argument("--no_normalize_grad", action="store_true", help="X-SAM: keep gradient scale")
@@ -165,13 +164,13 @@ def build_optimizer(args, model):
 
     if args.optim == "adamw":
         return base(groups, **kw)
-    if args.optim in ("sam", "asam"):
-        return SAM(groups, base, rho=args.rho, adaptive=args.optim == "asam", **kw)
+    if args.optim == "sam":
+        return SAM(groups, base, rho=args.rho, **kw)
     if args.optim == "gsam":
         return GSAM(groups, base, rho=args.rho, alpha=alpha(0.01), rho_min=args.rho_min,
                     lr_max=args.lr, lr_min=0.0, **kw)
     if args.optim == "wsam":
-        return WSAM(groups, base, rho=args.rho, gamma=gamma(0.9), decouple=not args.coupled, **kw)
+        return WSAM(groups, base, rho=args.rho, gamma=gamma(0.9), **kw)
     if args.optim == "eigensam":
         return EigenSAM(groups, base, rho=args.rho, alpha=alpha(0.2),
                         eig_every=args.eig_every, power_iters=args.power_iters, **kw)

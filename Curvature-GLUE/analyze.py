@@ -15,7 +15,7 @@ from collections import defaultdict
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-METHODS = ["adamw", "sam", "asam", "gsam", "wsam", "eigensam", "xsam", "entropysgd"]
+METHODS = ["adamw", "sam", "gsam", "wsam", "eigensam", "xsam", "entropysgd"]
 
 
 def load(results):

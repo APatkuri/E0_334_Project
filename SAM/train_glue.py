@@ -36,7 +36,7 @@ def parse_args():
     p.add_argument("--task", default="sst2", choices=TASKS)
     p.add_argument("--model", default="bert-base-uncased")
     p.add_argument("--optim", default="sam",
-                   choices=["adamw", "sam", "asam", "gsam", "wsam", "eigensam", "xsam"])
+                   choices=["adamw", "sam", "gsam", "wsam", "eigensam", "xsam"])
     p.add_argument("--epochs", type=int, default=3)
     p.add_argument("--batch_size", type=int, default=32)
     p.add_argument("--lr", type=float, default=2e-5)
@@ -52,7 +52,6 @@ def parse_args():
                    help="GSAM / Eigen-SAM / X-SAM strength (defaults: 0.01 / 0.2 / 0.2)")
     p.add_argument("--rho_min", type=float, default=None, help="GSAM: enables the lr-tied rho schedule")
     p.add_argument("--gamma", type=float, default=0.9, help="WSAM sharpness weight")
-    p.add_argument("--coupled", action="store_true", help="WSAM: use Coupled-WSAM")
     p.add_argument("--eig_every", type=int, default=100, help="Eigen-SAM / X-SAM: p")
     p.add_argument("--power_iters", type=int, default=5, help="Eigen-SAM / X-SAM: q")
     p.add_argument("--no_normalize_grad", action="store_true", help="X-SAM: keep gradient scale")
@@ -94,13 +93,13 @@ def build_optimizer(args, model):
 
     if args.optim == "adamw":
         return base(groups, **kw)
-    if args.optim in ("sam", "asam"):
-        return SAM(groups, base, rho=args.rho, adaptive=args.optim == "asam", **kw)
+    if args.optim == "sam":
+        return SAM(groups, base, rho=args.rho, **kw)
     if args.optim == "gsam":
         return GSAM(groups, base, rho=args.rho, alpha=args.alpha if args.alpha is not None else 0.01,
                     rho_min=args.rho_min, lr_max=args.lr, lr_min=0.0, **kw)
     if args.optim == "wsam":
-        return WSAM(groups, base, rho=args.rho, gamma=args.gamma, decouple=not args.coupled, **kw)
+        return WSAM(groups, base, rho=args.rho, gamma=args.gamma, **kw)
     alpha = args.alpha if args.alpha is not None else 0.2
     if args.optim == "eigensam":
         return EigenSAM(groups, base, rho=args.rho, alpha=alpha,

@@ -4,7 +4,7 @@ Self-contained PyTorch implementations of the SAM optimizers in `Papers/`.
 
 | Class | Paper | Update (g = gradient, g_adv = gradient at perturbed weights) |
 |-------|-------|--------------------------------------------------------------|
-| `SAM` | Foret et al. 2021, Bahri et al. 2022 | `w_adv = w + ρ g/‖g‖`, step with `g_adv`. `adaptive=True` → ASAM |
+| `SAM` | Foret et al. 2021, Bahri et al. 2022 | `w_adv = w + ρ g/‖g‖`, step with `g_adv` |
 | `GSAM` | Zhuang et al. 2022 | step with `g_adv − α g⊥` (`g⊥` = part of `g` orthogonal to `g_adv`) |
 | `WSAM` | Yue et al. 2023 | step with `g`, then `− lr·γ/(1−γ)·(g_adv − g)` |
 | `EigenSAM` | Luo et al. 2025 | perturb by `ρ (g/‖g‖ + α·sign⟨g,v⟩·v⊥)`, `v` = top Hessian eigenvector |
@@ -43,10 +43,10 @@ python train_glue.py --task sst2 --optim xsam --alpha 0.2
 | `sam-r18` | X-SAM T1 + Eigen-SAM T1, ResNet-18 (one shared protocol) | 63 |
 | `sam-alexnet` | X-SAM T1, AlexNet | 45 |
 | `sam-vit` | Eigen-SAM T2, ViT-B/16 fine-tuning | 18 |
-| `wsam-r18` | WSAM T2, T8 (Coupled-WSAM), T9 (minima), ResNet-18 | 50 |
+| `wsam-r18` | WSAM T2, T9 (minima), ResNet-18 | 40 |
 | `wsam-noise` | WSAM T5–T6, label noise | 80 |
 | `sam-r50` | X-SAM T1 + Eigen-SAM T1, ResNet-50 | 63 |
-| `sam-wrn`, `wsam-wrn` | WRN-28-10 rows (very slow) | 63, 50 |
+| `sam-wrn`, `wsam-wrn` | WRN-28-10 rows (very slow) | 63, 40 |
 
 Seeds are the outer loop, so seed 0 of a whole phase finishes first.
 
@@ -56,14 +56,13 @@ Seeds are the outer loop, so seed 0 of a whole phase finishes first.
 - Extra SAM forward passes don't update BN running stats.
 - X-SAM's GSAM α (0.02), WSAM γ (0.88), and its p, q (100, 5, from Eigen-SAM). Its Appendix A is missing from the PDF.
 - GSAM uses a constant ρ.
-- Coupled-WSAM reuses WSAM's γ.
 - Label-noise corruption is fixed across runs, with 5 seeds.
 - ViT fine-tuning: batch 64, no weight decay, 224 px, and ρ taken from Eigen-SAM App. E.
 
 **Not reproduced:**
 - GSAM's main tables (ImageNet from scratch; transfer from those weights) and WSAM T4 (DeiT on ImageNet): ImageNet is beyond our compute.
 - Bahri et al. (T5 Small–XL on TPUs).
-- WSAM T7 (Fisher-SAM), the ESAM rows of WSAM T2/T6, and sensitivity figures.
+- WSAM T7 (Fisher-SAM), T8 (Coupled-WSAM), the ESAM rows of WSAM T2/T6, and sensitivity figures.
 
 ## Paper defaults
 
@@ -79,7 +78,6 @@ Seeds are the outer loop, so seed 0 of a whole phase finishes first.
 
 - **Cost:** ~2 forward/backward passes per step. Eigen-SAM and X-SAM add `q` HVPs every `p` steps; these need `attn_implementation="eager"` (set automatically in `train_glue.py`).
 - **X-SAM:** uses the projector `I − α v vᵀ` (Thm. 5.1) instead of Alg. 2's sign term, so the sharp component always shrinks. Gradient is normalized (Eq. 9); pass `normalize_grad=False` to disable.
-- **WSAM:** `decouple=False` gives Coupled-WSAM.
 - **BatchNorm:** both forward passes update running stats unless the closure prevents it (`train_image.py` freezes them after the first pass). Irrelevant for transformers.
 - `EigenSAM.top_eigenvalue` / `XSAM.top_eigenvalue` hold the latest λmax estimate.
 - fp32, single-device only (no AMP/DDP).

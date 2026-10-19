@@ -12,7 +12,7 @@ App. B.1), then tune SAM's rho, and reuse that rho for GSAM, WSAM, Eigen-SAM and
 only their own knob (WSAM Sec. 6.2-6.3, Eigen-SAM App. E, X-SAM Sec. 6.1). Run in order:
     glue-smoke     every optimizer once, very short
     glue-lr        AdamW lr
-    glue-rho       SAM and ASAM rho, Entropy-Adam gamma      (needs glue-lr)
+    glue-rho       SAM rho, Entropy-Adam gamma               (needs glue-lr)
     glue-variants  GSAM, WSAM, Eigen-SAM, X-SAM              (needs glue-rho)
     glue-final     best setting of every method, 5 seeds     (needs glue-variants)
     glue-kaur      Kaur et al.'s SAM test transferred to GLUE (independent)
@@ -28,7 +28,7 @@ Reproduction of Chaudhari et al. (2017), Entropy-SGD/, any order:
 
 Image tables of the SAM-variant papers, SAM/train_image.py, any order (cheapest first):
     sam-smoke, sam-r18, sam-alexnet (X-SAM T1 + Eigen-SAM T1), sam-vit (Eigen-SAM T2),
-    wsam-r18, wsam-noise (WSAM T2, T5-T6, T8-T9), sam-r50, sam-wrn, wsam-wrn (very slow)
+    wsam-r18, wsam-noise (WSAM T2, T5-T6, T9), sam-r50, sam-wrn, wsam-wrn (very slow)
 """
 import argparse
 import json
@@ -50,7 +50,6 @@ EPOCHS = 3                                     # Devlin et al. (2019) Sec. 4.1: 
 LRS = [2e-5, 3e-5, 4e-5, 5e-5]                 # Devlin et al. Sec. 4.1, best on dev
 SAM_RHOS = [0.02, 0.05, 0.1, 0.15, 0.2, 0.3]   # Bahri et al. (2022) Sec. 4.1
 SAM_ARGS = {"ascent_frac": 0.25}               # Bahri et al. Alg. 1: ascent on 1/4 of the batch
-ASAM_RHOS = [10 * r for r in SAM_RHOS]         # GSAM App. B.1: ASAM uses 10x SAM's rho (Kwon et al.)
 GSAM_ALPHAS = [0.1, 0.2, 0.3]                  # GSAM App. B.1
 GSAM_ARGS = {"rho_min": 0.0}                   # GSAM Table 4: rho follows the lr; rho_min = 0 in most AdamW rows
 WSAM_GAMMAS = [round(0.80 + 0.02 * i, 2) for i in range(10)]  # WSAM Sec. 6.2: 0.80 to 0.98, step 0.02
@@ -107,7 +106,6 @@ def lr_stage(t, f):
 def rho_stage(t, f):
     lr = pick(lr_stage(t, f)["adamw"], "glue-lr")
     return {"sam": [(r, "sam", {"lr": lr, "rho": r, **SAM_ARGS}, t, f) for r in SAM_RHOS],
-            "asam": [(r, "asam", {"lr": lr, "rho": r}, t, f) for r in ASAM_RHOS],
             "entropysgd": [(g, "entropysgd", {"lr": lr, "gamma": g, **ENTROPY_ARGS}, t, f) for g in ENTROPY_GAMMAS]}
 
 
@@ -131,7 +129,7 @@ def final_jobs():
     for t, f in TASKS:
         stages = {**lr_stage(t, f), **rho_stage(t, f), **variant_stage(t, f)}
         for optim, cands in stages.items():
-            best = pick(cands, "glue-lr" if optim == "adamw" else "glue-rho" if optim in ("sam", "asam", "entropysgd")
+            best = pick(cands, "glue-lr" if optim == "adamw" else "glue-rho" if optim in ("sam", "entropysgd")
                         else "glue-variants")
             flags = next(fl for v, _, fl, _, _ in cands if v == best)
             print(f"{t}-f{f:g} {optim}: {flags}")
@@ -150,7 +148,7 @@ def glue_smoke_jobs():
     quick = {"epochs": 0.5, "evals": 1, "track_points": 2, "track_iters": 3, "lmax_iters": 3,
              "trace_samples": 2, "curv_examples": 128, "track_examples": 64}
     jobs = [glue_job("rte", 1.0, o, **quick, **extra) for o, extra in [
-        ("adamw", {}), ("sam", SAM_ARGS), ("asam", {"rho": 0.5}), ("gsam", GSAM_ARGS), ("wsam", {}),
+        ("adamw", {}), ("sam", SAM_ARGS), ("gsam", GSAM_ARGS), ("wsam", {}),
         ("eigensam", {"eig_every": 10}), ("xsam", {"eig_every": 10}), ("entropysgd", ENTROPY_ARGS)]]
     jobs.append(glue_job("rte", 1.0, "sam", **{**quick, **KAUR_ARGS, "epochs": 1, "target_train_acc": 0.5}))
     return [(n, s, a, "glue-smoke", e) for n, s, a, _, e in jobs]
@@ -261,7 +259,7 @@ XE_SEEDS = range(3)   # X-SAM Sec. 6.1, Eigen-SAM App. E
 # WSAM Sec. 6.1, Table 3: SgdM 400 epochs, SAM-like 200; cosine; rho 0.2; 5 seeds
 WSAM_BASE = {"resnet18": dict(batch_size=128, lr=0.05, weight_decay=1e-3),
              "wrn28_10": dict(batch_size=256, lr=0.1, weight_decay=1e-3)}
-WSAM_TUNED = {  # (GSAM alpha, WSAM gamma), WSAM Table 3. Coupled-WSAM (Table 8) reuses gamma (ours)
+WSAM_TUNED = {  # (GSAM alpha, WSAM gamma), WSAM Table 3
     ("resnet18", "cifar10"): (0.02, 0.88), ("resnet18", "cifar100"): (0.03, 0.82),
     ("wrn28_10", "cifar10"): (0.01, 0.88), ("wrn28_10", "cifar100"): (0.2, 0.94)}
 WSAM_NOISE = {  # WSAM Table 5: noise rate -> SAM rho, GSAM (rho, alpha), WSAM (rho, gamma)
@@ -303,7 +301,7 @@ def xe_jobs(model, seed):
 
 
 def wsam_jobs(model, seed):
-    """WSAM Table 2 (without ESAM) and Table 8 (Coupled-WSAM) for one model and seed."""
+    """WSAM Table 2 (without ESAM) for one model and seed."""
     jobs = []
     for d in ("cifar10", "cifar100"):
         alpha, gamma = WSAM_TUNED[(model, d)]
@@ -311,8 +309,7 @@ def wsam_jobs(model, seed):
         jobs += [img_job(seed, **{**base, "optim": "sgd", "epochs": 400, "rho": None}),
                  img_job(seed, **base, optim="sam"),
                  img_job(seed, **base, optim="gsam", alpha=alpha),
-                 img_job(seed, **base, optim="wsam", gamma=gamma),
-                 img_job(seed, **base, optim="wsam", gamma=gamma, coupled=True)]
+                 img_job(seed, **base, optim="wsam", gamma=gamma)]
     return jobs
 
 
@@ -346,7 +343,7 @@ def sam_phase(phase):
         jobs = [img_job(0, dataset="cifar10", model=m, optim="sam", **q) for m in ("resnet18", "resnet50", "wrn28_10", "alexnet")]
         jobs += [img_job(0, dataset="cifar100", model="resnet18", optim=o, eig_every=2, **q)
                  for o in ("sgd", "gsam", "wsam", "eigensam", "xsam")]
-        jobs += [img_job(0, dataset="fashion_mnist", model="resnet18", optim="wsam", coupled=True, **q),
+        jobs += [img_job(0, dataset="fashion_mnist", model="resnet18", optim="wsam", **q),
                  img_job(0, dataset="svhn", model="resnet18", optim="sgd", label_noise=0.4, **q),
                  img_job(0, dataset="cifar10", model="vit_b_16", optim="eigensam", eig_every=2, steps=3, batch_size=64,
                          group="img-smoke", lmax_examples=0)]

@@ -4,7 +4,7 @@ PyTorch implementations of the papers in our presentation, plus our contribution
 
 | Folder | Contents |
 |--------|----------|
-| `SAM/` | SAM / ASAM, GSAM, WSAM, Eigen-SAM, X-SAM (`sam_optim`) + image tables of X-SAM, Eigen-SAM, WSAM + GLUE fine-tuning |
+| `SAM/` | SAM, GSAM, WSAM, Eigen-SAM, X-SAM (`sam_optim`) + image tables of X-SAM, Eigen-SAM, WSAM + GLUE fine-tuning |
 | `Entropy-SGD/` | Entropy-SGD / Entropy-Adam (`entropy_optim`) + Chaudhari et al. reproduction + GLUE fine-tuning |
 | `Maximum-Hessian/` | λmax and Hessian-trace tools (`hessian_tools`) + Kaur et al. vision experiments |
 | `Curvature-GLUE/` | Our contribution: every optimizer on BERT/GLUE with curvature measurements |

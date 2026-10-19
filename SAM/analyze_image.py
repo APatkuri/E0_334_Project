@@ -14,8 +14,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODELS = ["resnet18", "resnet50", "wrn28_10", "alexnet"]
-METHODS = {"sgd": "SGD", "sam": "SAM", "gsam": "GSAM", "wsam": "WSAM", "coupled": "Coupled-WSAM",
-           "eigensam": "Eigen-SAM", "xsam": "X-SAM"}
+METHODS = {"sgd": "SGD", "sam": "SAM", "gsam": "GSAM", "wsam": "WSAM", "eigensam": "Eigen-SAM", "xsam": "X-SAM"}
 
 # X-SAM Table 1: accuracy (%) for ResNet-18, ResNet-50, WRN-28-10, AlexNet (None: did not converge)
 XSAM_T1 = {
@@ -36,12 +35,10 @@ EIGEN_T1 = {
 EIGEN_DATASETS = ["cifar10", "cifar100", "fashion_mnist", "svhn"]
 # Eigen-SAM Table 2: ViT-B/16 fine-tuning accuracy (%) on CIFAR-10, CIFAR-100
 EIGEN_T2 = {"sgd": [98.0, 88.6], "sam": [98.4, 89.5], "eigensam": [98.5, 89.8]}
-# WSAM Tables 2 and 8: top-1 error (%) on CIFAR-10, CIFAR-100
+# WSAM Table 2: top-1 error (%) on CIFAR-10, CIFAR-100
 WSAM_T2 = {
-    "resnet18": {"sgd": [4.32, 20.51], "sam": [3.68, 19.97], "gsam": [3.71, 19.84], "wsam": [3.62, 19.42],
-                 "coupled": [3.58, 19.49]},
-    "wrn28_10": {"sgd": [3.73, 19.27], "sam": [2.94, 16.49], "gsam": [2.91, 16.36], "wsam": [2.74, 16.33],
-                 "coupled": [2.91, 16.49]}}
+    "resnet18": {"sgd": [4.32, 20.51], "sam": [3.68, 19.97], "gsam": [3.71, 19.84], "wsam": [3.62, 19.42]},
+    "wrn28_10": {"sgd": [3.73, 19.27], "sam": [2.94, 16.49], "gsam": [2.91, 16.36], "wsam": [2.74, 16.33]}}
 # WSAM Table 6: accuracy (%) with 20, 40, 60, 80% symmetric label noise
 WSAM_T6 = {"sgd": [88.06, 84.11, 79.15, 69.07], "sam": [94.99, 93.28, 88.32, 77.57],
            "gsam": [95.11, 93.25, 89.90, 79.09], "wsam": [95.18, 93.33, 89.95, 78.30]}
@@ -54,7 +51,7 @@ def load(path):
     for f in glob.glob(os.path.join(path, "*.json")):
         r = json.load(open(f))
         if "curve" in r:  # also runs that diverged before their first evaluation (empty curve)
-            r["method"] = "coupled" if r.get("coupled") else r["optim"]
+            r["method"] = r["optim"]
             runs.append(r)
     return runs
 
@@ -101,7 +98,7 @@ def main():
                                               for d, v in zip(["cifar10", "cifar100"], vals)))
 
     for mod, table in WSAM_T2.items():
-        header(f"WSAM Tables 2 and 8, {mod}: top-1 error (%), ours | paper")
+        header(f"WSAM Table 2, {mod}: top-1 error (%), ours | paper")
         for m, vals in table.items():
             print(f"{METHODS[m]:13s}" + "  ".join(
                 f"{d}: {cell(pick(ws, dataset=d, model=mod, method=m, label_noise=0.0), v, error=True)}"
