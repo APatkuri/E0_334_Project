@@ -48,7 +48,8 @@ def hvp(params, loss_fn, batches, v):
     return [o / len(batches) for o in out]
 
 
-def _power_iteration(matvec, like, iters, tol, seed):
+def _power_iteration(matvec, like, iters, tol, seed, shift=0.0):
+    """`shift`: matvec is H - shift*I; convergence is judged on the unshifted eigenvalue."""
     g = torch.Generator().manual_seed(seed)
     v = normalize([torch.randn(p.shape, generator=g).to(p) for p in like])
     lam = None
@@ -56,14 +57,14 @@ def _power_iteration(matvec, like, iters, tol, seed):
         hv = matvec(v)
         new = dot(v, hv).item()  # Rayleigh quotient, v is unit
         v = normalize(hv)
-        converged = lam is not None and abs(new - lam) <= tol * max(abs(new), EPS)
+        converged = lam is not None and abs(new - lam) <= tol * max(abs(new + shift), EPS)
         lam = new
         if converged:
             break
     return lam, v
 
 
-def top_eigenvalue(params, loss_fn, batches, iters=20, tol=1e-3, seed=0):
+def top_eigenvalue(params, loss_fn, batches, iters=20, tol=1e-3, seed=0, shift_iters=None):
     """lambda_max of the Hessian by power iteration. Returns (lambda_max, unit eigenvector).
 
     Power iteration finds the eigenvalue of largest magnitude. If that one is negative, a second
@@ -74,7 +75,8 @@ def top_eigenvalue(params, loss_fn, batches, iters=20, tol=1e-3, seed=0):
     if lam < 0:
         shift = lam
         shifted = lambda u: [h - shift * x for h, x in zip(matvec(u), u)]
-        lam, v = _power_iteration(shifted, params, iters, tol, seed + 1)
+        # eigenvalues of H - shift*I are close relative to |shift|, so this run converges slowly
+        lam, v = _power_iteration(shifted, params, shift_iters or 5 * iters, tol, seed + 1, shift=shift)
         lam += shift
     return lam, v
 
