@@ -27,7 +27,7 @@ Reproduction of Chaudhari et al. (2017), Entropy-SGD/, any order:
     esgd-char (Sec. 5.4.2), esgd-5.1 (Hessian spectra, Figs. 1 and 3)
 
 Image tables of the SAM-variant papers, SAM/train_image.py, any order (cheapest first):
-    sam-smoke, sam-r18, sam-alexnet (X-SAM T1 + Eigen-SAM T1), sam-vit (Eigen-SAM T2),
+    sam-smoke, sam-r18, sam-alexnet (X-SAM T1 + Eigen-SAM T1), sam-ablate (ours), sam-vit (Eigen-SAM T2),
     wsam-r18, wsam-noise (WSAM T2, T5-T6, T9), sam-r50, sam-wrn, wsam-wrn (very slow)
 """
 import argparse
@@ -300,6 +300,22 @@ def xe_jobs(model, seed):
     return jobs
 
 
+def ablate_jobs(seed=0):
+    """Ours, ResNet-18 under X-SAM's protocol: X-SAM's normalized step vs. its projection (alpha 0 = step only,
+    no_normalize_grad = projection only; SAM and X-SAM come from sam-r18), the SGD baseline X-SAM lacks,
+    SAM at weight decay 5e-4 (Eigen-SAM's released logs; its paper says 5e-5), X-SAM Fig. 4's alpha."""
+    def job(d, optim, weight_decay=XE["weight_decay"], **extra):
+        return img_job(seed, group="img-ablate", dataset=d, model="resnet18", **{**XE, "weight_decay": weight_decay},
+                       lmax_every=10, optim=optim, rho=XE_RHO[d], **extra)
+    jobs = []
+    for d in ("cifar10", "cifar100"):
+        jobs += [job(d, "xsam", alpha=0.0), job(d, "xsam", alpha=0.2, no_normalize_grad=True)]
+    jobs += [j for j in xe_jobs("resnet18", seed) if "optimsgd" in j[0] and "svhn" not in j[0]]  # group img
+    jobs.append(job("cifar10", "sam", weight_decay=5e-4))
+    jobs += [job("cifar10", "xsam", alpha=a) for a in (0.1, 0.3, 0.4)]
+    return jobs
+
+
 def wsam_jobs(model, seed):
     """WSAM Table 2 (without ESAM) for one model and seed."""
     jobs = []
@@ -352,6 +368,8 @@ def sam_phase(phase):
         return [j for s in XE_SEEDS for j in xe_jobs("resnet18", s)]
     if phase == "sam-alexnet":   # X-SAM T1, AlexNet rows
         return [j for s in XE_SEEDS for j in xe_jobs("alexnet", s)]
+    if phase == "sam-ablate":    # ours: X-SAM ablations, SGD baseline, weight decay check (seed 0)
+        return ablate_jobs(0)
     if phase == "sam-r50":       # X-SAM T1 + Eigen-SAM T1, ResNet-50 rows
         return [j for s in XE_SEEDS for j in xe_jobs("resnet50", s)]
     if phase == "sam-wrn":       # X-SAM T1 + Eigen-SAM T1, WRN-28-10 rows (very slow)
@@ -378,7 +396,7 @@ PHASES = {
                                                   "vision-3.3", "vision-3.4", "vision-3.5", "vision-a3")},
     **{p: (lambda p=p: esgd_phase(p)) for p in ("esgd-smoke", "esgd-mnist", "esgd-cifar", "esgd-ptb",
                                                 "esgd-char", "esgd-5.1")},
-    **{p: (lambda p=p: sam_phase(p)) for p in ("sam-smoke", "sam-r18", "sam-alexnet", "sam-vit", "wsam-r18",
+    **{p: (lambda p=p: sam_phase(p)) for p in ("sam-smoke", "sam-r18", "sam-alexnet", "sam-ablate", "sam-vit", "wsam-r18",
                                                "wsam-noise", "sam-r50", "sam-wrn", "wsam-wrn")},
 }
 

@@ -1,6 +1,6 @@
 """Tables of the SAM-variant image experiments next to the papers' numbers.
 
-    python analyze_image.py            # reads ../results/img/*.json
+    python analyze_image.py            # reads ../results/img/*.json and ../results/img-ablate/*.json
 
 Each cell is "ours mean +- std (n runs) | paper", final test accuracy (WSAM: top-1 error, as the
 paper reports it). Missing runs show as "-".
@@ -69,6 +69,15 @@ def cell(rs, paper, error=False):
     return f"{ours} | {'n/c' if paper is None else paper}"
 
 
+def summary(rs):
+    """Mean accuracy (%) and final lambda_max of the finished runs, e.g. ' 93.17, lmax   21.3 (1)'."""
+    ok = [r for r in rs if not r["diverged"] and "test_acc" in r]
+    if not ok:
+        return f"{'-':>23s}"
+    lmax = np.mean([r.get("lmax", np.nan) for r in ok])
+    return f"{100 * np.mean([r['test_acc'] for r in ok]):6.2f}, lmax {lmax:6.1f} ({len(ok)})"
+
+
 def header(title):
     print(f"\n== {title} ==")
 
@@ -76,7 +85,9 @@ def header(title):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--results", default=os.path.join(HERE, "..", "results", "img"))
-    runs = load(p.parse_args().results)
+    p.add_argument("--ablate", default=os.path.join(HERE, "..", "results", "img-ablate"))
+    args = p.parse_args()
+    runs, ab = load(args.results), load(args.ablate)
     xe = [r for r in runs if r["weight_decay"] == 5e-5 and r["model"] != "vit_b_16"  # X-SAM / Eigen-SAM protocol
           and (r["optim"] != "wsam" or r.get("adaptive"))]  # older non-adaptive WSAM runs left out
     ws = [r for r in runs if r["weight_decay"] == 1e-3]                                   # WSAM protocol
@@ -120,7 +131,31 @@ def main():
         else:
             print(f"{METHODS[m]:13s} - | {paper[0]} / {paper[1]} / {paper[2]}")
 
-    minutes = [r["minutes"] for r in runs if "minutes" in r and r.get("steps_done")]
+    # ---- ours (sweep.py sam-ablate): ResNet-18 under X-SAM's protocol ----
+    r18 = lambda d, m: pick(xe, dataset=d, model="resnet18", method=m, label_noise=0.0)
+    xs = lambda d, **c: pick(ab, dataset=d, method="xsam", **c)
+    header("Ours, ResNet-18 minima (X-SAM protocol): accuracy (%), final lambda_max")
+    for m in ["sgd", "sam", "gsam", "wsam", "eigensam", "xsam"]:
+        print(f"{METHODS[m]:13s}" + "  ".join(f"{d}: {summary(r18(d, m))}" for d in ("cifar10", "cifar100")))
+
+    header("Ours, where X-SAM's gain comes from, ResNet-18: accuracy (%), final lambda_max")
+    rows = [("SAM", lambda d: r18(d, "sam")),
+            ("+ normalized step (X-SAM, alpha 0)", lambda d: xs(d, alpha=0.0)),
+            ("+ projection (X-SAM, unnormalized)", lambda d: xs(d, no_normalize_grad=True)),
+            ("+ both (X-SAM)", lambda d: r18(d, "xsam"))]
+    for name, f in rows:
+        print(f"{name:36s}" + "  ".join(f"{d}: {summary(f(d))}" for d in ("cifar10", "cifar100")))
+
+    header("X-SAM Fig. 4, ResNet-18 CIFAR-10: accuracy (%) vs alpha, ours (paper: best at 0.2, 94.3-94.7)")
+    for a in (0.1, 0.2, 0.3, 0.4):
+        rs = r18("cifar10", "xsam") if a == 0.2 else [r for r in xs("cifar10", alpha=a) if not r.get("no_normalize_grad")]
+        print(f"alpha {a}: {summary(rs)}")
+
+    header("Ours, SAM on ResNet-18 CIFAR-10 by weight decay: accuracy (%) | Eigen-SAM 95.5, X-SAM 93.64")
+    print(f"5e-5 (both papers' text): {summary(r18('cifar10', 'sam'))}")
+    print(f"5e-4 (Eigen-SAM's logs):  {summary(pick(ab, dataset='cifar10', method='sam', weight_decay=5e-4))}")
+
+    minutes = [r["minutes"] for r in runs + ab if "minutes" in r and r.get("steps_done")]
     if minutes:
         print(f"\n{len(runs)} runs, {sum(minutes) / 60:.1f} GPU-hours so far")
 

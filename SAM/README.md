@@ -42,6 +42,7 @@ python train_glue.py --task sst2 --optim xsam --alpha 0.2
 | `sam-smoke` | every model, optimizer and dataset, a few steps | 12 |
 | `sam-r18` | X-SAM T1 + Eigen-SAM T1, ResNet-18 (one shared protocol) | 63 |
 | `sam-alexnet` | X-SAM T1, AlexNet | 45 |
+| `sam-ablate` | Ours, ResNet-18 seed 0: X-SAM normalized step vs projection, SGD baseline, SAM at wd 5e-4, X-SAM Fig. 4 α | 11 |
 | `sam-vit` | Eigen-SAM T2, ViT-B/16 fine-tuning | 18 |
 | `wsam-r18` | WSAM T2, T9 (minima), ResNet-18 | 40 |
 | `wsam-noise` | WSAM T5–T6, label noise | 80 |

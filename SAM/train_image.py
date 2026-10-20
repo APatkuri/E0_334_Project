@@ -62,6 +62,7 @@ def parse_args():
     p.add_argument("--adaptive", action="store_true", help="WSAM: ASAM-style perturbation (scaled by |w|)")
     p.add_argument("--eig_every", type=int, default=100, help="Eigen-SAM / X-SAM: p")
     p.add_argument("--power_iters", type=int, default=5, help="Eigen-SAM / X-SAM: q")
+    p.add_argument("--no_normalize_grad", action="store_true", help="X-SAM: keep the gradient's scale (ablation)")
     p.add_argument("--label_noise", type=float, default=0.0, help="symmetric noise rate (WSAM Sec. 6.3)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--eval_every", type=int, default=0, help="steps between test evaluations (0 = each epoch)")
@@ -146,7 +147,7 @@ def build_optimizer(args, model):
         return EigenSAM(params, base, rho=args.rho, alpha=args.alpha, eig_every=args.eig_every,
                         power_iters=args.power_iters, **kw)
     return XSAM(params, base, rho=args.rho, alpha=args.alpha, eig_every=args.eig_every,
-                power_iters=args.power_iters, **kw)
+                power_iters=args.power_iters, normalize_grad=not args.no_normalize_grad, **kw)
 
 
 @contextlib.contextmanager
