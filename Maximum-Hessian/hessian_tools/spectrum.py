@@ -48,8 +48,7 @@ def hvp(params, loss_fn, batches, v):
     return [o / len(batches) for o in out]
 
 
-def _power_iteration(matvec, like, iters, tol, seed, shift=0.0):
-    """`shift`: matvec is H - shift*I; convergence is judged on the unshifted eigenvalue."""
+def _power_iteration(matvec, like, iters, tol, seed):
     g = torch.Generator().manual_seed(seed)
     v = normalize([torch.randn(p.shape, generator=g).to(p) for p in like])
     lam = None
@@ -57,27 +56,72 @@ def _power_iteration(matvec, like, iters, tol, seed, shift=0.0):
         hv = matvec(v)
         new = dot(v, hv).item()  # Rayleigh quotient, v is unit
         v = normalize(hv)
-        converged = lam is not None and abs(new - lam) <= tol * max(abs(new + shift), EPS)
+        converged = lam is not None and abs(new - lam) <= tol * max(abs(new), EPS)
         lam = new
         if converged:
             break
     return lam, v
 
 
-def top_eigenvalue(params, loss_fn, batches, iters=20, tol=1e-3, seed=0, shift_iters=None):
-    """lambda_max of the Hessian by power iteration. Returns (lambda_max, unit eigenvector).
+def _tridiag_eigh(a, b):
+    """Eigenvalues and eigenvectors of the symmetric tridiagonal matrix with diagonal a, off-diagonal b."""
+    T = torch.diag(torch.tensor(a, dtype=torch.float64))
+    if b:
+        off = torch.tensor(b, dtype=torch.float64)
+        T += torch.diag(off, 1) + torch.diag(off, -1)
+    return torch.linalg.eigh(T)
 
-    Power iteration finds the eigenvalue of largest magnitude. If that one is negative, a second
-    run on H - lam*I (whose dominant eigenvalue is lambda_max - lam >= 0) recovers lambda_max.
+
+def _lanczos_max(matvec, like, iters, tol, seed, min_iters=20):
+    """Largest (algebraic) eigenvalue and its unit Ritz vector by plain Lanczos.
+
+    Unlike power iteration on H - shift*I, large negative eigenvalues do not slow it down: Lanczos
+    resolves those outliers in its first few steps. Without reorthogonalization they may reappear
+    as ghost copies, which does not affect the largest Ritz value. The Ritz vector comes from a
+    second pass that replays the recurrence with the stored coefficients, so only a few vectors are
+    ever kept in memory.
+    """
+    gen = torch.Generator().manual_seed(seed)
+    q = normalize([torch.randn(p.shape, generator=gen).to(p) for p in like])
+    q_prev, a, b, theta = None, [], [], None
+    for j in range(iters):
+        w = matvec(q)
+        a.append(dot(w, q).item())
+        w = [wi - a[-1] * qi for wi, qi in zip(w, q)]
+        if q_prev is not None:
+            w = [wi - b[-1] * pi for wi, pi in zip(w, q_prev)]
+        b.append(torch.sqrt(dot(w, w)).item())
+        new = _tridiag_eigh(a, b[:-1])[0][-1].item()
+        converged = theta is not None and j + 1 >= min_iters and abs(new - theta) <= tol * max(abs(new), EPS)
+        theta = new
+        if converged or b[-1] < EPS:
+            break
+        q_prev, q = q, [x / b[-1] for x in w]
+    y = _tridiag_eigh(a, b[:-1])[1][:, -1].tolist()
+    gen = torch.Generator().manual_seed(seed)  # replay from the same start vector
+    q = normalize([torch.randn(p.shape, generator=gen).to(p) for p in like])
+    v, q_prev = [y[0] * x for x in q], None
+    for j in range(len(a) - 1):
+        w = [wi - a[j] * qi for wi, qi in zip(matvec(q), q)]
+        if q_prev is not None:
+            w = [wi - b[j - 1] * pi for wi, pi in zip(w, q_prev)]
+        q_prev, q = q, [x / b[j] for x in w]
+        v = [vi + y[j + 1] * qi for vi, qi in zip(v, q)]
+    return theta, normalize(v)
+
+
+def top_eigenvalue(params, loss_fn, batches, iters=20, tol=1e-3, seed=0, shift_iters=None):
+    """lambda_max of the Hessian. Returns (lambda_max, unit eigenvector).
+
+    Power iteration finds the eigenvalue of largest magnitude. If that one is negative, Lanczos
+    (up to `shift_iters`, default 5 * iters, steps) finds the largest one instead. A shifted power
+    iteration on H - lam*I fails here: fine-tuned BERT has negative eigenvalues of 1e4 and more, and
+    relative to such a shift all eigenvalues are nearly equal, so it returns about 0.
     """
     matvec = lambda u: hvp(params, loss_fn, batches, u)
     lam, v = _power_iteration(matvec, params, iters, tol, seed)
     if lam < 0:
-        shift = lam
-        shifted = lambda u: [h - shift * x for h, x in zip(matvec(u), u)]
-        # eigenvalues of H - shift*I are close relative to |shift|, so this run converges slowly
-        lam, v = _power_iteration(shifted, params, shift_iters or 5 * iters, tol, seed + 1, shift=shift)
-        lam += shift
+        lam, v = _lanczos_max(matvec, params, shift_iters or 5 * iters, tol, seed + 1)
     return lam, v
 
 
