@@ -370,6 +370,8 @@ def sam_phase(phase):
         return [j for s in XE_SEEDS for j in xe_jobs("alexnet", s)]
     if phase == "sam-ablate":    # ours: X-SAM ablations, SGD baseline, weight decay check (seed 0)
         return ablate_jobs(0)
+    if phase == "sam-ablate-seeds":  # seeds 1-2 of the two X-SAM ablation arms (alpha 0, unnormalized)
+        return [j for s in (1, 2) for j in ablate_jobs(s) if "_alpha0_" in j[0] or "no_normalize_grad" in j[0]]
     if phase == "sam-r50":       # X-SAM T1 + Eigen-SAM T1, ResNet-50 rows
         return [j for s in XE_SEEDS for j in xe_jobs("resnet50", s)]
     if phase == "sam-wrn":       # X-SAM T1 + Eigen-SAM T1, WRN-28-10 rows (very slow)
@@ -396,7 +398,7 @@ PHASES = {
                                                   "vision-3.3", "vision-3.4", "vision-3.5", "vision-a3")},
     **{p: (lambda p=p: esgd_phase(p)) for p in ("esgd-smoke", "esgd-mnist", "esgd-cifar", "esgd-ptb",
                                                 "esgd-char", "esgd-5.1")},
-    **{p: (lambda p=p: sam_phase(p)) for p in ("sam-smoke", "sam-r18", "sam-alexnet", "sam-ablate", "sam-vit", "wsam-r18",
+    **{p: (lambda p=p: sam_phase(p)) for p in ("sam-smoke", "sam-r18", "sam-alexnet", "sam-ablate", "sam-ablate-seeds", "sam-vit", "wsam-r18",
                                                "wsam-noise", "sam-r50", "sam-wrn", "wsam-wrn")},
 }
 

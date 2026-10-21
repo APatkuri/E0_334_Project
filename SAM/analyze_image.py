@@ -70,12 +70,13 @@ def cell(rs, paper, error=False):
 
 
 def summary(rs):
-    """Mean accuracy (%) and final lambda_max of the finished runs, e.g. ' 93.17, lmax   21.3 (1)'."""
+    """Mean +- std accuracy (%) and mean final lambda_max of the finished runs, e.g. ' 93.17 +- 0.12, lmax   21.3 (3)'."""
     ok = [r for r in rs if not r["diverged"] and "test_acc" in r]
     if not ok:
-        return f"{'-':>23s}"
+        return f"{'-':>31s}"
+    acc = 100 * np.array([r["test_acc"] for r in ok])
     lmax = np.mean([r.get("lmax", np.nan) for r in ok])
-    return f"{100 * np.mean([r['test_acc'] for r in ok]):6.2f}, lmax {lmax:6.1f} ({len(ok)})"
+    return f"{acc.mean():6.2f} +- {acc.std():4.2f}, lmax {lmax:6.1f} ({len(ok)})"
 
 
 def header(title):
