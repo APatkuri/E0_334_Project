@@ -1,0 +1,90 @@
+
+== X-SAM Table 1, cifar10: accuracy (%), ours | paper ==
+SAM          resnet18:  93.17 +- 0.00 (1) | 93.64  resnet50:                 - | 92.33  wrn28_10:                 - | 95.01  alexnet:  90.73 +- 0.00 (1) | 88.66
+WSAM         resnet18:  94.15 +- 0.00 (1) | 93.01  resnet50:                 - | 91.68  wrn28_10:                 - | 94.23  alexnet:  89.15 +- 0.00 (1) | 90.08
+GSAM         resnet18:  93.41 +- 0.00 (1) | 93.8  resnet50:                 - | 92.16  wrn28_10:                 - | 94.67  alexnet:  90.33 +- 0.00 (1) | 88.59
+Eigen-SAM    resnet18:  93.78 +- 0.00 (1) | 93.82  resnet50:                 - | 92.57  wrn28_10:                 - | 95.11  alexnet:  90.42 +- 0.00 (1) | 88.79
+X-SAM        resnet18:  94.52 +- 0.00 (1) | 94.71  resnet50:                 - | 93.76  wrn28_10:                 - | 95.53  alexnet:  90.74 +- 0.00 (1) | 90.73
+
+== X-SAM Table 1, cifar100: accuracy (%), ours | paper ==
+SAM          resnet18:  73.85 +- 0.00 (1) | 74.0  resnet50:                 - | 72.01  wrn28_10:                 - | 77.96  alexnet:  63.12 +- 0.00 (1) | 60.26
+WSAM         resnet18:  75.39 +- 0.00 (1) | 73.65  resnet50:                 - | 71.04  wrn28_10:                 - | 77.19  alexnet:  57.22 +- 0.00 (1) | 65.9
+GSAM         resnet18:  73.42 +- 0.00 (1) | 73.55  resnet50:                 - | 71.61  wrn28_10:                 - | 78.15  alexnet:  62.58 +- 0.00 (1) | 60.14
+Eigen-SAM    resnet18:  73.17 +- 0.00 (1) | 73.74  resnet50:                 - | 71.9  wrn28_10:                 - | 78.2  alexnet:  61.75 +- 0.00 (1) | 60.49
+X-SAM        resnet18:  74.78 +- 0.00 (1) | 74.1  resnet50:                 - | 74.08  wrn28_10:                 - | 78.23  alexnet:  66.77 +- 0.00 (1) | 68.82
+
+== X-SAM Table 1, fashion_mnist: accuracy (%), ours | paper ==
+SAM          resnet18:  95.33 +- 0.00 (1) | 95.22  resnet50:                 - | 94.46  wrn28_10:                 - | 95.56  alexnet:  94.25 +- 0.00 (1) | 94.34
+WSAM         resnet18:  95.42 +- 0.00 (1) | 95.32  resnet50:                 - | 94.57  wrn28_10:                 - | 95.4  alexnet:                 - [1 diverged] | n/c
+GSAM         resnet18:  95.28 +- 0.00 (1) | 95.39  resnet50:                 - | 94.94  wrn28_10:                 - | 95.68  alexnet:  94.11 +- 0.00 (1) | 94.61
+Eigen-SAM    resnet18:  95.36 +- 0.00 (1) | 95.36  resnet50:                 - | 94.76  wrn28_10:                 - | 95.61  alexnet:  94.06 +- 0.00 (1) | n/c
+X-SAM        resnet18:  95.68 +- 0.00 (1) | 95.52  resnet50:                 - | 95.16  wrn28_10:                 - | 95.53  alexnet:  94.37 +- 0.00 (1) | 94.75
+
+== Eigen-SAM Table 1, resnet18: accuracy (%), ours | paper ==
+SGD          cifar10:  94.47 +- 0.00 (1) | 94.8  cifar100:  73.45 +- 0.00 (1) | 74.6  fashion_mnist:  95.46 +- 0.00 (1) | 94.9  svhn:                 - | 96.1
+SAM          cifar10:  93.17 +- 0.00 (1) | 95.5  cifar100:  73.85 +- 0.00 (1) | 77.4  fashion_mnist:  95.33 +- 0.00 (1) | 95.4  svhn:                 - | 96.3
+Eigen-SAM    cifar10:  93.78 +- 0.00 (1) | 95.9  cifar100:  73.17 +- 0.00 (1) | 78.3  fashion_mnist:  95.36 +- 0.00 (1) | 95.6  svhn:                 - | 96.5
+
+== Eigen-SAM Table 1, resnet50: accuracy (%), ours | paper ==
+SGD          cifar10:                 - | 95.0  cifar100:                 - | 76.6  fashion_mnist:                 - | 94.8  svhn:                 - | 96.1
+SAM          cifar10:                 - | 95.6  cifar100:                 - | 79.0  fashion_mnist:                 - | 95.4  svhn:                 - | 96.4
+Eigen-SAM    cifar10:                 - | 96.2  cifar100:                 - | 79.7  fashion_mnist:                 - | 95.7  svhn:                 - | 96.6
+
+== Eigen-SAM Table 1, wrn28_10: accuracy (%), ours | paper ==
+SGD          cifar10:                 - | 95.7  cifar100:                 - | 79.8  fashion_mnist:                 - | 95.1  svhn:                 - | 96.2
+SAM          cifar10:                 - | 96.5  cifar100:                 - | 82.0  fashion_mnist:                 - | 95.6  svhn:                 - | 96.4
+Eigen-SAM    cifar10:                 - | 96.8  cifar100:                 - | 82.8  fashion_mnist:                 - | 95.9  svhn:                 - | 96.7
+
+== Eigen-SAM Table 2, ViT-B/16: accuracy (%), ours | paper ==
+SGD          cifar10:                 - | 98.0  cifar100:                 - | 88.6
+SAM          cifar10:                 - | 98.4  cifar100:                 - | 89.5
+Eigen-SAM    cifar10:                 - | 98.5  cifar100:                 - | 89.8
+
+== WSAM Table 2, resnet18: top-1 error (%), ours | paper ==
+SGD          cifar10:                 - | 4.32  cifar100:                 - | 20.51
+SAM          cifar10:                 - | 3.68  cifar100:                 - | 19.97
+GSAM         cifar10:                 - | 3.71  cifar100:                 - | 19.84
+WSAM         cifar10:                 - | 3.62  cifar100:                 - | 19.42
+
+== WSAM Table 2, wrn28_10: top-1 error (%), ours | paper ==
+SGD          cifar10:                 - | 3.73  cifar100:                 - | 19.27
+SAM          cifar10:                 - | 2.94  cifar100:                 - | 16.49
+GSAM         cifar10:                 - | 2.91  cifar100:                 - | 16.36
+WSAM         cifar10:                 - | 2.74  cifar100:                 - | 16.33
+
+== WSAM Table 6, ResNet-18 CIFAR-10 with label noise: accuracy (%), ours | paper ==
+SGD          20%:                 - | 88.06  40%:                 - | 84.11  60%:                 - | 79.15  80%:                 - | 69.07
+SAM          20%:                 - | 94.99  40%:                 - | 93.28  60%:                 - | 88.32  80%:                 - | 77.57
+GSAM         20%:                 - | 95.11  40%:                 - | 93.25  60%:                 - | 89.9  80%:                 - | 79.09
+WSAM         20%:                 - | 95.18  40%:                 - | 93.33  60%:                 - | 89.95  80%:                 - | 78.3
+
+== WSAM Table 9, ResNet-18 CIFAR-10 minima: train loss / accuracy / lambda_max, ours | paper ==
+SGD           - | 0.0026 / 0.9575 / 62.58
+SAM           - | 0.0339 / 0.9622 / 22.67
+WSAM          - | 0.0089 / 0.9654 / 23.97
+
+== Ours, ResNet-18 minima (X-SAM protocol): accuracy (%), final lambda_max ==
+SGD          cifar10:  94.47, lmax    8.1 (1)  cifar100:  73.45, lmax   10.9 (1)
+SAM          cifar10:  93.17, lmax    1.7 (1)  cifar100:  73.85, lmax    3.9 (1)
+GSAM         cifar10:  93.41, lmax    2.7 (1)  cifar100:  73.42, lmax    4.0 (1)
+WSAM         cifar10:  94.15, lmax    0.5 (1)  cifar100:  75.39, lmax    4.0 (1)
+Eigen-SAM    cifar10:  93.78, lmax    3.0 (1)  cifar100:  73.17, lmax    3.6 (1)
+X-SAM        cifar10:  94.52, lmax    2.1 (1)  cifar100:  74.78, lmax    3.0 (1)
+
+== Ours, where X-SAM's gain comes from, ResNet-18: accuracy (%), final lambda_max ==
+SAM                                 cifar10:  93.17, lmax    1.7 (1)  cifar100:  73.85, lmax    3.9 (1)
++ normalized step (X-SAM, alpha 0)  cifar10:  94.54, lmax    1.3 (1)  cifar100:  74.71, lmax    2.9 (1)
++ projection (X-SAM, unnormalized)  cifar10:  93.20, lmax    1.8 (1)  cifar100:  73.70, lmax    3.6 (1)
++ both (X-SAM)                      cifar10:  94.52, lmax    2.1 (1)  cifar100:  74.78, lmax    3.0 (1)
+
+== X-SAM Fig. 4, ResNet-18 CIFAR-10: accuracy (%) vs alpha, ours (paper: best at 0.2, 94.3-94.7) ==
+alpha 0.1:  94.60, lmax    1.3 (1)
+alpha 0.2:  94.52, lmax    2.1 (1)
+alpha 0.3:  94.68, lmax    1.5 (1)
+alpha 0.4:  94.40, lmax    2.3 (1)
+
+== Ours, SAM on ResNet-18 CIFAR-10 by weight decay: accuracy (%) | Eigen-SAM 95.5, X-SAM 93.64 ==
+5e-5 (both papers' text):  93.17, lmax    1.7 (1)
+5e-4 (Eigen-SAM's logs):   95.79, lmax    9.3 (1)
+
+36 runs, 56.0 GPU-hours so far

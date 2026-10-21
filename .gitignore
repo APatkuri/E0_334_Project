@@ -4,4 +4,3 @@ data/
 results.jsonl
 *.png
 .venv/
-results/
