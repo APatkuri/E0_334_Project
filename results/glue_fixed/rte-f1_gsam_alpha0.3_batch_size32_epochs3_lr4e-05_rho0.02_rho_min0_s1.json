@@ -1,0 +1,122 @@
+{
+ "task": "rte",
+ "train_frac": 1.0,
+ "subset_seed": 0,
+ "model": "bert-base-uncased",
+ "optim": "gsam",
+ "budget": "grads",
+ "epochs": 3.0,
+ "batch_size": 32,
+ "lr": 4e-05,
+ "beta1": 0.9,
+ "weight_decay": 0.01,
+ "schedule": "linear",
+ "warmup_ratio": 0.1,
+ "target_train_acc": 0.0,
+ "max_len": 128,
+ "seed": 1,
+ "evals": 3,
+ "rho": 0.02,
+ "ascent_frac": 1.0,
+ "alpha": 0.3,
+ "rho_min": 0.0,
+ "eig_every": 100,
+ "power_iters": 5,
+ "no_normalize_grad": false,
+ "gamma": null,
+ "sgld_steps": 5,
+ "gamma_growth": 0.0,
+ "noise": 0.0001,
+ "mu_alpha": 0.75,
+ "curv_examples": 1000,
+ "lmax_iters": 20,
+ "trace_samples": 20,
+ "sharp_rho": 0.05,
+ "track_points": 5,
+ "track_examples": 256,
+ "track_iters": 10,
+ "train_eval_examples": 5000,
+ "out": "/home/priyank1/aditya/E0_334_Project/results/glue/rte-f1_gsam_alpha0.3_batch_size32_epochs3_lr4e-05_rho0.02_rho_min0_s1.json",
+ "train_size": 2490,
+ "updates": 117,
+ "max_updates": 117,
+ "cost_per_update": 2.0,
+ "grad_evals": 234,
+ "primary": "acc",
+ "diverged": false,
+ "dev_curve": [
+  {
+   "step": 39,
+   "acc": 0.5270758122743683,
+   "loss": 0.6898306967549376,
+   "f1": 0.0,
+   "mcc": 0.0
+  },
+  {
+   "step": 78,
+   "acc": 0.5992779783393501,
+   "loss": 0.6745258434154496,
+   "f1": 0.44776119402985076,
+   "mcc": 0.19792887239085444
+  },
+  {
+   "step": 117,
+   "acc": 0.6101083032490975,
+   "loss": 0.6595801444260222,
+   "f1": 0.55,
+   "mcc": 0.213897458586933
+  }
+ ],
+ "track": [
+  {
+   "step": 0,
+   "lmax": 333.3740234375,
+   "cos_grad_v": 0.9591096180249923,
+   "cos_update_v": 0.0
+  },
+  {
+   "step": 23,
+   "lmax": 107.03135681152344,
+   "cos_grad_v": 0.7773901660080057,
+   "cos_update_v": 0.01923658438569051
+  },
+  {
+   "step": 46,
+   "lmax": 73.33482360839844,
+   "cos_grad_v": 0.5342229928685736,
+   "cos_update_v": 0.005681602754072839
+  },
+  {
+   "step": 70,
+   "lmax": 118.76131439208984,
+   "cos_grad_v": 0.008864892303621525,
+   "cos_update_v": 0.013598691620637149
+  },
+  {
+   "step": 93,
+   "lmax": 65.63501739501953,
+   "cos_grad_v": 0.1493129838313528,
+   "cos_update_v": 0.06084488516421503
+  }
+ ],
+ "dev": {
+  "step": 117,
+  "acc": 0.6101083032490975,
+  "loss": 0.6595801444260222,
+  "f1": 0.55,
+  "mcc": 0.213897458586933
+ },
+ "train": {
+  "acc": 0.6738955823293172,
+  "loss": 0.6370578258391844,
+  "f1": 0.6413427561837456,
+  "mcc": 0.3528753231699488
+ },
+ "gap": 0.06378727908021975,
+ "lmax": 63.830867767333984,
+ "trace": 449.03005430698397,
+ "trace_se": 51.7347143417041,
+ "sharpness": 0.062207840383052826,
+ "seconds": 880.3,
+ "gpu": "NVIDIA GeForce RTX 3090"
+}

@@ -1,0 +1,91 @@
+{
+ "task": "sst2",
+ "train_frac": 0.2,
+ "subset_seed": 0,
+ "model": "bert-base-uncased",
+ "optim": "sam",
+ "budget": "steps",
+ "epochs": 30.0,
+ "batch_size": 256,
+ "lr": 2e-05,
+ "beta1": 0.9,
+ "weight_decay": 0.01,
+ "schedule": "constant",
+ "warmup_ratio": 0.1,
+ "target_train_acc": 0.99,
+ "max_len": 128,
+ "seed": 0,
+ "evals": 1,
+ "rho": 0.08,
+ "ascent_frac": 1.0,
+ "alpha": null,
+ "rho_min": null,
+ "eig_every": 100,
+ "power_iters": 5,
+ "no_normalize_grad": false,
+ "gamma": null,
+ "sgld_steps": 5,
+ "gamma_growth": 0.0,
+ "noise": 0.0001,
+ "mu_alpha": 0.75,
+ "curv_examples": 1000,
+ "lmax_iters": 20,
+ "trace_samples": 20,
+ "sharp_rho": 0.05,
+ "track_points": 5,
+ "track_examples": 256,
+ "track_iters": 10,
+ "train_eval_examples": 100000,
+ "out": "/home/priyank1/aditya/E0_334_Project/results/glue/sst2-f0.2_sam_batch_size256_budgetsteps_epochs30_evals1_lr2e-05_rho0.08_scheduleconstant_target_train_acc0.99_train_eval_examples100000_s0.json",
+ "train_size": 13469,
+ "updates": 371,
+ "max_updates": 1590,
+ "cost_per_update": 2.0,
+ "grad_evals": 742,
+ "primary": "acc",
+ "diverged": false,
+ "dev_curve": [
+  {
+   "step": 371,
+   "acc": 0.9185779816513762,
+   "loss": 0.25169670281060247,
+   "f1": 0.9220636663007684,
+   "mcc": 0.8381132568440418
+  }
+ ],
+ "track": [
+  {
+   "step": 0,
+   "lmax": 134.3041229248047,
+   "cos_grad_v": 0.28753104137887037,
+   "cos_update_v": 0.019801607790241177
+  },
+  {
+   "step": 318,
+   "lmax": 42.42863464355469,
+   "cos_grad_v": 0.3098883951919312,
+   "cos_update_v": 0.033643417462292616
+  }
+ ],
+ "reached_target": true,
+ "dev": {
+  "step": 371,
+  "acc": 0.9185779816513762,
+  "loss": 0.25169670281060247,
+  "f1": 0.9220636663007684,
+  "mcc": 0.8381132568440418
+ },
+ "train": {
+  "acc": 0.9910164080481105,
+  "loss": 0.033551045144924796,
+  "f1": 0.9919435381849657,
+  "mcc": 0.9818024603347635
+ },
+ "gap": 0.07243842639673437,
+ "lmax": 33.18171310424805,
+ "trace": 502.47813873291017,
+ "trace_se": 16.13419282943429,
+ "sharpness": 0.024675598368048668,
+ "seconds": 603.4,
+ "gpu": "NVIDIA GeForce RTX 3090"
+}
